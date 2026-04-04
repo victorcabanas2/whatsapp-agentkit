@@ -193,9 +193,20 @@ async def webhook_handler(request: Request):
                 # Obtener historial anterior (sin el mensaje actual)
                 historial = await obtener_historial(msg.telefono)
 
+                # Si el mensaje viene de un anuncio (button/interactive/referral),
+                # agregar contexto al inicio del mensaje para que Claude sepa el producto
+                mensaje_contextualizado = msg.texto
+
+                # Detectar si es un click desde anuncio y extraer payload
+                if msg.payload:
+                    # El payload contiene info del anuncio (ej: "depuffing_wand", "theragun_mini", etc)
+                    logger.info(f"📢 Mensaje desde anuncio con payload: {msg.payload}")
+                    # Prepender el payload al mensaje para que Claude lo entienda
+                    mensaje_contextualizado = f"[Vino desde anuncio de: {msg.payload}] {msg.texto}"
+
                 # Generar respuesta con Claude
                 logger.debug("Llamando a Claude AI...")
-                respuesta = await generar_respuesta(msg.texto, historial)
+                respuesta = await generar_respuesta(mensaje_contextualizado, historial)
 
                 # Guardar mensaje del usuario
                 await guardar_mensaje(msg.telefono, "user", msg.texto)

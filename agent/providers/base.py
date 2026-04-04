@@ -17,10 +17,11 @@ class MensajeEntrante:
     Mensaje normalizado — mismo formato sin importar el proveedor.
     Todos los proveedores deben convertir sus payloads a este formato.
     """
-    telefono: str       # Número del remitente (ej: 595991234567)
-    texto: str          # Contenido del mensaje
-    mensaje_id: str     # ID único del mensaje
-    es_propio: bool     # True si lo envió el agente (se ignora)
+    telefono: str            # Número del remitente (ej: 595991234567)
+    texto: str               # Contenido del mensaje
+    mensaje_id: str          # ID único del mensaje
+    es_propio: bool          # True si lo envió el agente (se ignora)
+    payload: str | None = None  # Metadata del anuncio (ej: "depuffing_wand", "theragun_mini")
 
 
 class ProveedorWhatsApp(ABC):

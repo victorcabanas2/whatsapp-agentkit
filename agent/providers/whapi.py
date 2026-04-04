@@ -87,6 +87,7 @@ class ProveedorWhapi(ProveedorWhatsApp):
 
             texto = ""
             imagen_url = None
+            contexto_payload = None  # Para guardar metadata del anuncio
 
             # TIPO 1: Mensaje de texto normal
             if tipo_msg == "text":
@@ -99,6 +100,9 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 button_text = msg.get("button", {}).get("text", "").strip()
                 payload = msg.get("button", {}).get("payload", "").strip()
 
+                # Guardar payload para contexto de anuncio
+                contexto_payload = payload if payload else None
+
                 if button_text:
                     texto = button_text
                 elif payload:
@@ -106,7 +110,7 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 else:
                     texto = "[Click en botón de anuncio]"
 
-                logger.info(f"✅ Mensaje desde ANUNCIO/botón: {texto}")
+                logger.info(f"✅ Mensaje desde ANUNCIO/botón: {texto} (payload: {contexto_payload})")
 
             # TIPO 3: Mensaje interactivo (respuesta a lista o botones)
             elif tipo_msg == "interactive":
@@ -149,6 +153,7 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 source_type = referral.get("source_type", "")
                 source_id = referral.get("source_id", "")
                 texto = f"[Referral desde {source_type}: {source_id}]"
+                contexto_payload = source_id if source_id else source_type
                 logger.info(f"✅ Referral de anuncio: {source_type}")
 
             else:
@@ -168,6 +173,7 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 texto=texto,
                 mensaje_id=mensaje_id,
                 es_propio=False,
+                payload=contexto_payload,  # Metadata del anuncio
             ))
             logger.info(f"📨 Mensaje parseado: {telefono} → {texto[:60]}...")
 
