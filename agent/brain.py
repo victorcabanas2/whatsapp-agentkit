@@ -11,6 +11,7 @@ import yaml
 import logging
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
+from agent.shopify import obtener_stock_producto, obtener_stocks_multiples, cargar_config_shopify
 
 load_dotenv()
 logger = logging.getLogger("agentkit")
@@ -102,6 +103,47 @@ def detectar_confirmacion_pago(mensaje: str) -> bool:
     return False
 
 
+async def obtener_contexto_stock() -> str:
+    """
+    Consulta stocks en Shopify de los 5 productos más populares.
+    Retorna un string con el estado de stock para agregar al system prompt.
+    """
+    config = cargar_config_shopify()
+    products = config.get("products", {})
+
+    # Productos top para consultar (más vendidos)
+    top_productos = [
+        "theragun_mini",
+        "theragun_pro_plus",
+        "theraface_depuffing_wand",
+        "jetboots_prime",
+        "whoop_peak",
+    ]
+
+    stocks = {}
+    for nombre in top_productos:
+        if nombre in products:
+            product_info = products[nombre]
+            shopify_id = product_info.get("shopify_id")
+            nombre_display = product_info.get("nombre", nombre)
+
+            try:
+                stock = await obtener_stock_producto(shopify_id)
+                if stock is not None:
+                    stocks[nombre_display] = stock
+            except Exception as e:
+                logger.warning(f"⚠️ Error consultando stock de {nombre}: {e}")
+
+    # Formatear para agregar al prompt
+    if stocks:
+        stock_info = "**Stock disponible (actualizado):**\n"
+        for producto, cantidad in stocks.items():
+            stock_info += f"- {producto}: {cantidad} unidades\n"
+        return stock_info
+    else:
+        return ""
+
+
 async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
     """
     Genera una respuesta usando Claude API.
@@ -122,6 +164,15 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
     if not system_prompt:
         logger.error("❌ No se pudo cargar el system prompt")
         return obtener_mensaje_error()
+
+    # Agregar contexto de stock al system prompt
+    try:
+        contexto_stock = await obtener_contexto_stock()
+        if contexto_stock:
+            system_prompt += f"\n\n{contexto_stock}"
+    except Exception as e:
+        logger.warning(f"⚠️ Error obteniendo contexto de stock: {e}")
+        # Continuar sin stock info si falla
 
     # Construir mensajes para la API
     mensajes = []
