@@ -1,53 +1,60 @@
-# AgentKit — WhatsApp AI Agent Builder
+# Belén — Agente de WhatsApp para Rebody
 
-Construye tu propio agente de WhatsApp con inteligencia artificial en menos de 30 minutos.
-No necesitas saber programar. Claude Code construye todo por ti.
+Belén es tu asistente virtual de WhatsApp que responde preguntas sobre productos, toma pedidos y brinda soporte post-venta para Rebody.
 
-<!-- ![AgentKit Demo](demo.gif) -->
-
----
-
-## Que es AgentKit?
-
-AgentKit es un proyecto que usa **Claude Code** (la herramienta de programacion de Anthropic)
-para generar un agente de WhatsApp completo y personalizado para tu negocio.
-
-Tu solo respondes preguntas sobre tu negocio. Claude Code se encarga de:
-- Escribir todo el codigo
-- Configurar la conexion con WhatsApp
-- Crear un "cerebro" con IA que sabe sobre tu negocio
-- Dejarlo listo para que tus clientes le escriban
+**Construido con:** Claude AI + Whapi.cloud + FastAPI + SQLite
 
 ---
 
-## Como funciona? (El flujo completo)
+## Arrancar rápidamente
 
-### Paso 1: Tu clonas el repo y corres un comando
-
-```bash
-git clone https://github.com/Hainrixz/whatsapp-agentkit.git
-cd whatsapp-agentkit
-bash start.sh
-```
-
-`start.sh` solo verifica que tengas Python 3.11+ y Claude Code instalados.
-
-### Paso 2: Abres Claude Code y escribes /build-agent
+### Modo desarrollo
 
 ```bash
-claude
-# Dentro de Claude Code escribe:
-/build-agent
+# 1. Instalar dependencias
+pip install -r requirements.txt
+
+# 2. Configurar variables de entorno (.env ya listo)
+
+# 3. Iniciar servidor
+uvicorn agent.main:app --reload --port 8000
 ```
 
-Esto activa el sistema. Claude Code lee las instrucciones de `CLAUDE.md` y empieza
-a guiarte paso a paso.
+Servidor en: `http://localhost:8000`
 
-### Paso 3: Claude Code te entrevista (5 minutos)
+### Probar sin WhatsApp (simulador local)
 
-Te hace 10 preguntas, una por una:
+```bash
+python tests/test_local.py
+```
 
-1. **Nombre de tu negocio** — ej: "Cafeteria El Buen Sabor"
+Escribe mensajes como si fueras un cliente y Belén responde con IA.
+
+**Comandos:**
+- `/limpiar` — Borrar historial
+- `/stats` — Ver estadísticas
+- `/salir` — Terminar
+
+### Docker
+
+```bash
+docker compose up --build
+```
+
+---
+
+## Deploy a Railway
+
+```bash
+git add .
+git commit -m "feat: Belén agente WhatsApp"
+git push origin main
+```
+
+Luego en [railway.app](https://railway.app):
+1. Conecta tu repo de GitHub
+2. Configura variables de entorno
+3. Railway deployará automáticamente
 2. **A que se dedica** — ej: "Vendemos cafe de especialidad y postres artesanales"
 3. **Para que quieres el agente** — responder preguntas, agendar citas, tomar pedidos, etc.
 4. **Nombre del agente** — ej: "Sofia" (el nombre que veran tus clientes)

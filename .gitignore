@@ -1,10 +1,12 @@
 # Secretos — NUNCA subir a GitHub
 .env
+.env.local
+.env.*.local
 
-# Base de datos local
-*.db
-*.sqlite
-*.sqlite3
+# Base de datos local (sí a Git, pero excluir instancia local)
+agentkit.db
+*.db-wal
+*.db-shm
 
 # Python
 __pycache__/
@@ -17,17 +19,9 @@ env/
 dist/
 build/
 
-# Knowledge (archivos privados del negocio)
+# Knowledge — incluye .gitkeep para estructura
 knowledge/*
 !knowledge/.gitkeep
-
-# Archivos generados por Claude Code durante onboarding
-agent/
-config/
-tests/
-requirements.txt
-Dockerfile
-docker-compose.yml
 
 # Session state
 config/session.yaml
@@ -48,3 +42,7 @@ Thumbs.db
 
 # Node (si se usa para Claude Code)
 node_modules/
+
+# Logs
+*.log
+logs/

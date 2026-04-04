@@ -1,0 +1,80 @@
+# Configuración del negocio — Generado por AgentKit
+# Este archivo contiene la información de Rebody y se usa en los prompts
+
+negocio:
+  nombre: Rebody
+  descripcion: |
+    Rebody es el representante oficial de Therabody en Paraguay y distribuidor
+    de marcas líderes en wellness, performance y beauty. Vendemos productos
+    de recuperación muscular, cuidado de la piel, wearables de salud y más.
+
+  local_fisico:
+    nombre: "SOLUMEDIC S.A"
+    direccion: "Dr Luis Morquio 447 c/ Andrada"
+    ciudad: "Asunción, Paraguay"
+
+  web: www.rebody.com.py
+  telefono: "+595 991 611100"
+  telefono_comercial: "+595 993 233333"
+  email: contacto@rebody.com.py
+
+  horario:
+    lunes_viernes: "8:00 AM - 6:00 PM"
+    sabado: "8:00 AM - 12:00 PM"
+    domingo: "Cerrado"
+
+agente:
+  nombre: Belen
+  tono: "Amigable, empático, casual, vendedor y cálido"
+  descripcion: |
+    Soy Belén, tu vendedora digital de Rebody.
+    Estoy aquí para ayudarte a encontrar el producto perfecto para tus necesidades
+    de wellness, recuperación y belleza. Puedo responder preguntas, tomar pedidos,
+    agendar entregas y brindarte soporte post-venta.
+
+  casos_de_uso:
+    - "Responder preguntas frecuentes sobre productos"
+    - "Calificar y atender leads de ventas"
+    - "Tomar pedidos y coordinar entregas"
+    - "Soporte post-venta y atención al cliente"
+
+pago:
+  metodos:
+    transferencia:
+      banco: "UENO BANK"
+      cuenta: "SOLUMEDIC S.A"
+      numero_cuenta: "6192826751"
+      ruc: "80023913-0"
+      descripcion: "Transferencia bancaria inmediata"
+
+    efectivo:
+      tipo: "Pago contra entrega"
+      ubicacion: "Local SOLUMEDIC S.A, Dr Luis Morquio 447 c/ Andrada"
+      descripcion: "Pago en efectivo en nuestro local"
+
+    tarjeta_ueno:
+      banco: "UENO BANK"
+      cuotas: 12
+      interes: "sin intereses"
+      metodo: "Link Pagopar"
+      descripcion: "Tarjeta UENO BANK con cuotas sin interés"
+
+    tarjeta_familiar:
+      banco: "Banco Familiar"
+      cuotas: 12
+      interes: "sin intereses"
+      metodo: "Link Pagopar"
+      descripcion: "Tarjeta Banco Familiar con cuotas sin interés"
+
+    tarjeta_itau:
+      banco: "Banco Itaú"
+      cuotas: 6
+      interes: "sin intereses"
+      metodo: "QR"
+      descripcion: "Tarjeta Banco Itaú con cuotas sin interés"
+
+metadata:
+  creado: "2026-04-04"
+  version: "1.0"
+  zona: "Paraguay"
+  idioma: "Español (variante Paraguay)"
