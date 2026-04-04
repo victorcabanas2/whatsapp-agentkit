@@ -60,8 +60,19 @@ class ProveedorWhapi(ProveedorWhatsApp):
             texto = msg.get("text", {}).get("body", "").strip()
             mensaje_id = msg.get("id", "")
 
-            # Solo procesar si hay teléfono y texto
-            if telefono and texto:
+            # Extraer imagen si existe
+            imagen_url = None
+            if msg.get("type") == "image":
+                imagen_url = msg.get("image", {}).get("link")
+                if not texto:
+                    texto = "[Imagen enviada]"
+            elif msg.get("type") == "sticker":
+                imagen_url = msg.get("sticker", {}).get("link")
+                if not texto:
+                    texto = "[Sticker enviado]"
+
+            # Procesar si hay teléfono y (texto o imagen)
+            if telefono and (texto or imagen_url):
                 mensajes.append(MensajeEntrante(
                     telefono=telefono,
                     texto=texto,
