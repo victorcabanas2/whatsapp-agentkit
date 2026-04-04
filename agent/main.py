@@ -16,8 +16,16 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse, JSONResponse
 from dotenv import load_dotenv
 
-from agent.brain import generar_respuesta
-from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, registrar_lead
+from agent.brain import generar_respuesta, detectar_confirmacion_pago
+from agent.memory import (
+    inicializar_db,
+    guardar_mensaje,
+    obtener_historial,
+    registrar_lead,
+    guardar_pedido,
+    obtener_ultimo_pedido,
+    actualizar_estado_pedido,
+)
 from agent.providers import obtener_proveedor
 from agent.scheduler import inicializar_scheduler, detener_scheduler
 
@@ -38,6 +46,55 @@ logger = logging.getLogger("agentkit")
 
 # Obtener proveedor de WhatsApp
 proveedor = obtener_proveedor()
+
+# URL de imagen de datos bancarios para TRANSFERENCIA
+IMAGEN_DATOS_BANCARIOS = "https://i.imgur.com/WYPWrdl.png"
+
+
+def detectar_opcion_pago(respuesta_agente: str) -> str | None:
+    """
+    Detecta qué método de pago mencionó el agente en la respuesta.
+
+    Returns:
+        "transferencia", "pagopar", "qr", "efectivo", o None
+    """
+    respuesta_lower = respuesta_agente.lower()
+
+    if "transferencia" in respuesta_lower and "ueno" in respuesta_lower:
+        return "transferencia"
+    elif "pagopar" in respuesta_lower:
+        return "pagopar"
+    elif "itaú" in respuesta_lower or "qr" in respuesta_lower:
+        return "qr"
+    elif "efectivo" in respuesta_lower:
+        return "efectivo"
+
+    return None
+
+
+async def enviar_imagen(telefono: str, url_imagen: str) -> bool:
+    """
+    Envía una imagen al cliente vía WhatsApp usando el proveedor configurado.
+
+    Args:
+        telefono: Número del cliente
+        url_imagen: URL de la imagen a enviar
+
+    Returns:
+        True si se envió exitosamente, False en caso contrario
+    """
+    try:
+        # Usar el método del proveedor si está disponible
+        if hasattr(proveedor, 'enviar_imagen'):
+            logger.info(f"📸 Enviando imagen a {telefono}")
+            return await proveedor.enviar_imagen(telefono, url_imagen)
+        else:
+            # Si el proveedor no soporta imágenes, log pero no error
+            logger.warning(f"⚠️ Proveedor {proveedor.__class__.__name__} no soporta envío de imágenes")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Error enviando imagen a {telefono}: {e}")
+        return False
 
 
 @asynccontextmanager
@@ -155,6 +212,34 @@ async def webhook_handler(request: Request):
                 else:
                     logger.error(f"✗ Fallo al enviar respuesta a {msg.telefono}")
 
+                # ═══════════════════════════════════════════════════════════
+                # LÓGICA DE PAGOS - Detectar métodos de pago
+                # ═══════════════════════════════════════════════════════════
+
+                metodo_pago = detectar_opcion_pago(respuesta)
+
+                if metodo_pago == "transferencia":
+                    # Enviar imagen de datos bancarios
+                    logger.info(f"💳 Cliente {msg.telefono} eligió TRANSFERENCIA - enviando datos bancarios")
+                    await enviar_imagen(msg.telefono, IMAGEN_DATOS_BANCARIOS)
+
+                # ═══════════════════════════════════════════════════════════
+                # LÓGICA DE CONFIRMACIÓN - Detectar confirmación de pago
+                # ═══════════════════════════════════════════════════════════
+
+                if detectar_confirmacion_pago(msg.texto):
+                    logger.info(f"✅ Cliente {msg.telefono} confirmó pago - intentando guardar pedido")
+
+                    # Obtener el último pedido en progreso
+                    ultimo_pedido = await obtener_ultimo_pedido(msg.telefono)
+
+                    if ultimo_pedido and ultimo_pedido.estado == "pendiente":
+                        # Actualizar estado a pagado
+                        await actualizar_estado_pedido(ultimo_pedido.id, "pagado")
+                        logger.info(f"💰 Pedido #{ultimo_pedido.id} marcado como PAGADO")
+                    else:
+                        logger.warning(f"⚠️ No hay pedido pendiente para {msg.telefono} - confirmación sin pedido en BD")
+
             except Exception as e:
                 logger.error(f"✗ Error procesando mensaje de {msg.telefono}: {e}")
                 # Intentar enviar mensaje de error
@@ -177,3 +262,92 @@ async def webhook_handler(request: Request):
 async def health():
     """Endpoint de health para Railway/monitoreo."""
     return {"status": "healthy", "service": "agentkit"}
+
+
+# ═══════════════════════════════════════════════════════════
+# ENDPOINTS DE PEDIDOS (ADMIN/DEBUG)
+# ═══════════════════════════════════════════════════════════
+
+@app.post("/pedidos")
+async def crear_pedido(request: Request):
+    """
+    Endpoint para crear un pedido manualmente.
+    Usado para guardar pedidos cuando se completa el flujo de compra.
+
+    JSON esperado:
+    {
+        "telefono": "595...",
+        "producto": "Theragun PRO PLUS",
+        "precio": "5,799,000",
+        "metodo_pago": "transferencia",
+        "nombre_cliente": "Juan Pérez",
+        "direccion_envio": "Av. Mariscal Lopez 123",
+        "ciudad_departamento": "Asunción",
+        "telefono_contacto": "595991234567",
+        "ruc_cedula": "1234567",
+        "razon_social": "Particular"
+    }
+    """
+    try:
+        data = await request.json()
+
+        pedido = await guardar_pedido(
+            telefono=data.get("telefono"),
+            producto=data.get("producto"),
+            precio=data.get("precio"),
+            metodo_pago=data.get("metodo_pago"),
+            nombre_cliente=data.get("nombre_cliente", ""),
+            direccion_envio=data.get("direccion_envio", ""),
+            ciudad_departamento=data.get("ciudad_departamento", ""),
+            telefono_contacto=data.get("telefono_contacto", ""),
+            ruc_cedula=data.get("ruc_cedula", ""),
+            razon_social=data.get("razon_social", ""),
+        )
+
+        logger.info(f"💾 Pedido guardado: {pedido}")
+
+        return {
+            "status": "ok",
+            "pedido_id": pedido.id,
+            "mensaje": f"Pedido #{pedido.id} guardado correctamente"
+        }
+
+    except Exception as e:
+        logger.error(f"Error creando pedido: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/pedidos/{telefono}")
+async def obtener_pedidos(telefono: str):
+    """
+    Obtiene todos los pedidos de un cliente.
+
+    Args:
+        telefono: Número de teléfono del cliente
+    """
+    try:
+        pedidos = await obtener_ultimo_pedido(telefono)
+
+        if not pedidos:
+            return {"status": "ok", "pedidos": [], "total": 0}
+
+        return {
+            "status": "ok",
+            "telefono": telefono,
+            "pedidos": [
+                {
+                    "id": p.id,
+                    "producto": p.producto,
+                    "precio": p.precio,
+                    "metodo_pago": p.metodo_pago,
+                    "estado": p.estado,
+                    "fecha_pedido": str(p.fecha_pedido),
+                }
+                for p in ([pedidos] if pedidos else [])
+            ],
+            "total": 1 if pedidos else 0
+        }
+
+    except Exception as e:
+        logger.error(f"Error obteniendo pedidos: {e}")
+        raise HTTPException(status_code=400, detail=str(e))

@@ -89,6 +89,35 @@ class CarritoAbandonado(Base):
         return f"<Carrito {self.telefono} - {self.producto}>"
 
 
+class Pedido(Base):
+    """Modelo para pedidos confirmados y completados."""
+    __tablename__ = "pedidos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telefono: Mapped[str] = mapped_column(String(50), index=True)
+    producto: Mapped[str] = mapped_column(String(200))  # Nombre del producto
+    precio: Mapped[str] = mapped_column(String(50))     # Precio en Gs
+    metodo_pago: Mapped[str] = mapped_column(String(100))  # transferencia, efectivo, pagopar, qr
+
+    # Datos de envío
+    nombre_cliente: Mapped[str] = mapped_column(String(100), nullable=True)
+    direccion_envio: Mapped[str] = mapped_column(Text, nullable=True)
+    ciudad_departamento: Mapped[str] = mapped_column(String(100), nullable=True)
+    telefono_contacto: Mapped[str] = mapped_column(String(50), nullable=True)
+
+    # Datos de factura
+    ruc_cedula: Mapped[str] = mapped_column(String(50), nullable=True)
+    razon_social: Mapped[str] = mapped_column(String(100), nullable=True)
+
+    # Estado del pedido
+    fecha_pedido: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    estado: Mapped[str] = mapped_column(String(50), default="pendiente")  # pendiente, pagado, entregado
+    confirmacion_enviada: Mapped[bool] = mapped_column(default=False)
+
+    def __repr__(self):
+        return f"<Pedido {self.telefono} - {self.producto} - {self.estado}>"
+
+
 async def inicializar_db():
     """Crea las tablas si no existen."""
     async with engine.begin() as conn:
@@ -322,4 +351,85 @@ async def marcar_carrito_recordatorio_enviado(carrito_id: int):
         carrito = result.scalar_one_or_none()
         if carrito:
             carrito.recordatorio_enviado = True
+            await session.commit()
+
+
+# ════════════════════════════════════════════════════════════
+# FUNCIONES PARA PEDIDOS
+# ════════════════════════════════════════════════════════════
+
+async def guardar_pedido(
+    telefono: str,
+    producto: str,
+    precio: str,
+    metodo_pago: str,
+    nombre_cliente: str = "",
+    direccion_envio: str = "",
+    ciudad_departamento: str = "",
+    telefono_contacto: str = "",
+    ruc_cedula: str = "",
+    razon_social: str = "",
+) -> Pedido:
+    """
+    Guarda un pedido confirmado en la base de datos.
+
+    Args:
+        telefono: Número de teléfono del cliente
+        producto: Nombre del producto
+        precio: Precio en Guaraní
+        metodo_pago: Método de pago (transferencia, efectivo, pagopar, qr)
+        nombre_cliente: Nombre del cliente
+        direccion_envio: Dirección de envío
+        ciudad_departamento: Ciudad o departamento
+        telefono_contacto: Teléfono de contacto
+        ruc_cedula: RUC o cédula
+        razon_social: Razón social
+
+    Returns:
+        El pedido guardado
+    """
+    async with async_session() as session:
+        pedido = Pedido(
+            telefono=telefono,
+            producto=producto,
+            precio=precio,
+            metodo_pago=metodo_pago,
+            nombre_cliente=nombre_cliente,
+            direccion_envio=direccion_envio,
+            ciudad_departamento=ciudad_departamento,
+            telefono_contacto=telefono_contacto,
+            ruc_cedula=ruc_cedula,
+            razon_social=razon_social,
+            estado="pendiente",
+            fecha_pedido=datetime.utcnow()
+        )
+        session.add(pedido)
+        await session.commit()
+        return pedido
+
+
+async def obtener_pedidos_cliente(telefono: str) -> list[Pedido]:
+    """Obtiene todos los pedidos de un cliente."""
+    async with async_session() as session:
+        query = select(Pedido).where(Pedido.telefono == telefono).order_by(desc(Pedido.fecha_pedido))
+        result = await session.execute(query)
+        return result.scalars().all()
+
+
+async def obtener_ultimo_pedido(telefono: str) -> Pedido | None:
+    """Obtiene el último pedido de un cliente."""
+    async with async_session() as session:
+        query = select(Pedido).where(Pedido.telefono == telefono).order_by(desc(Pedido.fecha_pedido)).limit(1)
+        result = await session.execute(query)
+        return result.scalar_one_or_none()
+
+
+async def actualizar_estado_pedido(pedido_id: int, nuevo_estado: str):
+    """Actualiza el estado de un pedido (pendiente, pagado, entregado)."""
+    async with async_session() as session:
+        query = select(Pedido).where(Pedido.id == pedido_id)
+        result = await session.execute(query)
+        pedido = result.scalar_one_or_none()
+        if pedido:
+            pedido.estado = nuevo_estado
             await session.commit()

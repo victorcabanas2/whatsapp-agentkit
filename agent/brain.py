@@ -54,6 +54,54 @@ def obtener_mensaje_fallback() -> str:
     return config.get("fallback_message", "Disculpa, no entendí tu mensaje. ¿Podrías reformularlo?")
 
 
+def detectar_confirmacion_pago(mensaje: str) -> bool:
+    """
+    Detecta si el mensaje es una confirmación de pago.
+    Busca palabras clave como: "confirmo", "confirmé", "hice", "transferí", "pagué", etc.
+
+    Args:
+        mensaje: El mensaje del usuario
+
+    Returns:
+        True si detecta confirmación, False en caso contrario
+    """
+    palabras_confirmacion = [
+        "confirmo",
+        "confirmé",
+        "confirmado",
+        "hice",
+        "hice la",
+        "transferí",
+        "transferencia",
+        "pagué",
+        "pagado",
+        "pague",
+        "ya transferí",
+        "ya hice",
+        "ya pagué",
+        "listo",
+        "hecho",
+        "adelante",
+        "ok",
+        "okey",
+        "dale",
+        "si",
+        "sí",
+        "efectivamente",
+        "claro",
+    ]
+
+    mensaje_lower = mensaje.lower().strip()
+
+    # Buscar cualquiera de las palabras clave
+    for palabra in palabras_confirmacion:
+        if palabra in mensaje_lower:
+            logger.debug(f"Detectada confirmación de pago: '{palabra}' en mensaje: {mensaje}")
+            return True
+
+    return False
+
+
 async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
     """
     Genera una respuesta usando Claude API.

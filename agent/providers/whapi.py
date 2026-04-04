@@ -83,6 +83,34 @@ class ProveedorWhapi(ProveedorWhatsApp):
 
         return mensajes
 
+    async def enviar_imagen(self, telefono: str, url_imagen: str) -> bool:
+        """Envía una imagen via Whapi.cloud."""
+        if not self.token:
+            logger.warning("WHAPI_TOKEN no configurado — imagen no enviada")
+            return False
+
+        telefono_limpio = str(telefono).replace("+", "").replace(" ", "")
+        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
+        payload = {"to": telefono_limpio, "image": {"link": url_imagen}}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://gate.whapi.cloud/messages/image",
+                    json=payload,
+                    headers=headers,
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    logger.info(f"✓ Imagen enviada a {telefono_limpio}")
+                    return True
+                else:
+                    logger.error(f"✗ Error Whapi imagen ({response.status_code}): {response.text}")
+                    return False
+        except Exception as e:
+            logger.error(f"✗ Error al enviar imagen: {e}")
+            return False
+
     async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
         """
         Envía un mensaje de texto via Whapi.cloud.
