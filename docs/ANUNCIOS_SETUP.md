@@ -16,11 +16,15 @@ Bot pregunta: "¿Qué producto te interesa?" ❌
 
 ### CON configurar payload (recomendado):
 ```
-Anuncio: "Theragun Mini 3.0 - Descubre más"
+Anuncio: "Depuffing Wand - Reduce ojeras"
 Cliente: Clickea botón
-Bot recibe: "[Vino desde anuncio de: theragun_mini] Descubre más"
-Bot responde: "Hola! El Theragun Mini 3.0 es el más compacto..." ✅
+Bot recibe: "[Vino desde anuncio de: theraface_depuffing_wand] Hola"
+Bot responde directo: "Hola! Veo que te interesa el Depuffing Wand..." ✅
+Si cliente pregunta: "¿Y el PRO PLUS?" → Bot responde sobre el PRO PLUS sin problema ✅
 ```
+
+**Clave**: El payload es solo para CONTEXTO (por dónde vino), no para ENCAJONARLO
+en ese producto. Claude es flexible y responde sobre cualquier producto si lo pregunta.
 
 ---
 
@@ -37,13 +41,12 @@ Busca la sección de **Botón de CTA** (Call to Action)
 - **Tipo de botón**: "Enviar mensaje" (Send Message)
 - **Texto del botón**: Ej: "Consultar precio" o "Quiero Info"
 
-### 3. **IMPORTANTE - Agregar Mensaje Personalizado**:
+### 3. **IMPORTANTE - Configurar Payload del Producto**:
 
-En el campo de **Mensaje Inicial** o **Contexto del Mensaje**, debes especificar el payload del producto.
+El payload es la forma de decirle al bot "este anuncio es sobre tal producto",
+para que sepa por dónde vino el cliente.
 
-**Si tu proveedor es Whapi.cloud:**
-
-Usa este formato en el CTA:
+**Usa este formato en el botón CTA:**
 
 ```
 Payload: theragun_mini
@@ -54,6 +57,9 @@ O si Whapi.cloud permite parámetros:
 ```
 ?product=theragun_mini
 ```
+
+**Nota**: Esto es solo CONTEXTO. Si el cliente después pregunta sobre otro producto,
+el bot responde sin problema. No es un "bloqueo" a ese producto.
 
 ### 4. Productos y sus Payloads (usa estos nombres)
 
@@ -177,9 +183,11 @@ Perfecto! Ya está configurado. Ahora todo anuncio de producto resultará en una
 ## Tips
 
 1. **Usa payloads en MINÚSCULAS con GUIONES**: `theragun_mini` ✅, no `Theragun Mini` ❌
-2. **Cada producto debe tener su propio anuncio con payload diferente**
-3. **Los mensajes se guardan en SQLite** — puedes verlos en el panel admin
-4. **Claude sabe todos los precios y especificaciones** — el bot responderá con datos correctos automáticamente
+2. **Cada producto puede tener su propio anuncio con payload diferente**
+3. **El payload es SOLO CONTEXTO** — El bot sabe que el cliente viene de ese anuncio, pero puede hablar de cualquier producto
+4. **Los mensajes se guardan en SQLite** — puedes verlos en el panel admin
+5. **Claude sabe todos los precios y especificaciones** — el bot responderá con datos correctos automáticamente
+6. **El cliente puede explorar otros productos** — Si dice "¿y el PRO PLUS?", el bot responde sin problema
 
 ---
 
