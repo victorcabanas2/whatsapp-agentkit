@@ -107,7 +107,13 @@ async def obtener_contexto_stock() -> str:
     """
     Consulta stocks en Shopify de los 5 productos más populares.
     Retorna un string con el estado de stock para agregar al system prompt.
+
+    NOTA: Temporalmente desactivado por token inválido.
+    Descomentar cuando tengas credenciales válidas.
     """
+    return ""  # Desactivado por ahora
+
+    # Código original (comentado):
     config = cargar_config_shopify()
     products = config.get("products", {})
 
