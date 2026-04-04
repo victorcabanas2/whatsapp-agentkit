@@ -42,10 +42,10 @@ def obtener_credenciales_shopify() -> tuple[str, str] | None:
 
 async def obtener_stock_producto(shopify_product_id: str) -> int | None:
     """
-    Consulta el stock de un producto en Shopify.
+    Consulta el stock de un producto en Shopify usando REST API.
 
     Args:
-        shopify_product_id: ID del producto en Shopify
+        shopify_product_id: ID del producto en Shopify (números)
 
     Returns:
         Cantidad en stock, o None si falla
@@ -66,71 +66,50 @@ async def obtener_stock_producto(shopify_product_id: str) -> int | None:
             logger.debug(f"📦 Stock en caché para {shopify_product_id}: {stock} (edad: {age}s)")
             return stock
 
-    # Consultar API de Shopify
+    # Consultar REST API de Shopify
     try:
         headers = {
             "X-Shopify-Access-Token": access_token,
             "Content-Type": "application/json",
         }
 
-        # Shopify GraphQL API
-        query = """
-        {
-          product(id: "gid://shopify/Product/%s") {
-            title
-            variants(first: 1) {
-              edges {
-                node {
-                  id
-                  quantityAvailable
-                }
-              }
-            }
-          }
-        }
-        """ % shopify_product_id
-
+        # Shopify REST API - obtener producto y sus variantes
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"https://{shop_name}/admin/api/2024-01/graphql.json",
-                json={"query": query},
+            response = await client.get(
+                f"https://{shop_name}/admin/api/2024-01/products/{shopify_product_id}.json",
                 headers=headers,
                 timeout=10.0,
             )
 
-            if response.status_code != 200:
+            if response.status_code == 404:
+                logger.warning(f"⚠️ Producto {shopify_product_id} no encontrado en Shopify (404)")
+                return None
+            elif response.status_code != 200:
                 logger.error(f"❌ Error Shopify API ({response.status_code}): {response.text}")
                 return None
 
             data = response.json()
+            product = data.get("product")
 
-            # Parsear respuesta
-            if data.get("errors"):
-                logger.error(f"❌ Error GraphQL: {data['errors']}")
+            if not product:
+                logger.warning(f"⚠️ No se encontró producto {shopify_product_id}")
                 return None
 
-            try:
-                product = data.get("data", {}).get("product")
-                if not product:
-                    logger.warning(f"⚠️ Producto {shopify_product_id} no encontrado en Shopify")
-                    return None
-
-                variants = product.get("variants", {}).get("edges", [])
-                if not variants:
-                    logger.warning(f"⚠️ Producto {shopify_product_id} sin variantes")
-                    return None
-
-                stock = variants[0]["node"].get("quantityAvailable", 0)
-                logger.info(f"📦 Stock Shopify para {shopify_product_id}: {stock} unidades")
-
-                # Guardar en caché
-                _stock_cache[shopify_product_id] = (stock, datetime.utcnow())
-
-                return stock
-
-            except (KeyError, IndexError, TypeError) as e:
-                logger.error(f"❌ Error parseando respuesta Shopify: {e}")
+            # Sumar stock de todas las variantes
+            variants = product.get("variants", [])
+            if not variants:
+                logger.warning(f"⚠️ Producto {shopify_product_id} sin variantes")
                 return None
+
+            # Calcular stock total (suma de todas las variantes)
+            stock_total = sum(v.get("inventory_quantity", 0) for v in variants)
+
+            logger.info(f"📦 Stock Shopify para {shopify_product_id}: {stock_total} unidades")
+
+            # Guardar en caché
+            _stock_cache[shopify_product_id] = (stock_total, datetime.utcnow())
+
+            return stock_total
 
     except Exception as e:
         logger.error(f"❌ Error consultando stock en Shopify: {e}")

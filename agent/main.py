@@ -362,3 +362,62 @@ async def obtener_pedidos(telefono: str):
     except Exception as e:
         logger.error(f"Error obteniendo pedidos: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════
+# ENDPOINTS DE DEBUG SHOPIFY
+# ═══════════════════════════════════════════════════════════
+
+@app.get("/debug/shopify")
+async def debug_shopify():
+    """
+    Endpoint de debug para verificar conexión con Shopify.
+    Intenta obtener stock de los primeros productos.
+    """
+    from agent.shopify import (
+        obtener_credenciales_shopify,
+        cargar_config_shopify,
+        obtener_stock_producto,
+    )
+
+    try:
+        credenciales = obtener_credenciales_shopify()
+        config = cargar_config_shopify()
+
+        if not credenciales:
+            return {
+                "status": "error",
+                "mensaje": "Credenciales Shopify no configuradas",
+            }
+
+        shop_name, token = credenciales
+
+        return {
+            "status": "ok",
+            "shop": shop_name,
+            "token_configured": "Sí" if token else "No",
+            "products_mapped": len(config.get("products", {})),
+            "mensaje": "Credenciales OK. Intenta /debug/shopify/test-producto para verificar un ID específico",
+        }
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.get("/debug/shopify/test/{product_id}")
+async def debug_shopify_test(product_id: str):
+    """
+    Testa obtener stock de un producto específico.
+    Ej: /debug/shopify/test/9157820449026
+    """
+    from agent.shopify import obtener_stock_producto
+
+    try:
+        stock = await obtener_stock_producto(product_id)
+        return {
+            "status": "ok",
+            "product_id": product_id,
+            "stock": stock,
+        }
+    except Exception as e:
+        return {"status": "error", "product_id": product_id, "error": str(e)}
