@@ -14,8 +14,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, HTTPException, Cookie
-from fastapi.responses import PlainTextResponse, JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import PlainTextResponse, JSONResponse, HTMLResponse
 from dotenv import load_dotenv
 from sqlalchemy import select, desc, func
 
@@ -140,12 +139,6 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
-
-# Servir archivos estáticos (admin dashboard)
-import os as os_module
-if os_module.path.exists("public"):
-    app.mount("/static", StaticFiles(directory="public"), name="static")
-
 
 @app.get("/")
 async def health_check():
@@ -453,7 +446,152 @@ async def debug_shopify_test(product_id: str):
 @app.get("/admin")
 async def admin_dashboard():
     """Retorna dashboard HTML."""
-    return FileResponse("public/admin.html")
+    html = """<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Admin - Belén</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        h1 { margin: 20px 0; }
+        h2 { margin: 30px 0 15px 0; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }
+        .stat-card { background: #1e293b; border-radius: 8px; padding: 20px; border-left: 4px solid #10b981; }
+        .stat-number { font-size: 32px; font-weight: bold; color: #10b981; }
+        .stat-label { color: #94a3b8; font-size: 14px; margin-top: 5px; }
+        table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; margin: 20px 0; }
+        th { background: #0f172a; padding: 12px; text-align: left; font-weight: 600; border-bottom: 1px solid #334155; }
+        td { padding: 12px; border-bottom: 1px solid #334155; }
+        tr:hover { background: #334155; }
+        a { color: #3b82f6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+        .badge-success { background: #10b981; color: black; }
+        .badge-warning { background: #f59e0b; color: black; }
+        .badge-danger { background: #ef4444; color: white; }
+        .refresh { text-align: right; margin: 20px 0; font-size: 12px; color: #94a3b8; }
+        .loading { text-align: center; padding: 40px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Panel Admin - Belén</h1>
+
+        <div class="stats" id="stats">
+            <div class="loading">Cargando...</div>
+        </div>
+
+        <h2>👥 Leads Recientes</h2>
+        <table id="leads-table">
+            <thead>
+                <tr>
+                    <th>Teléfono</th>
+                    <th>Nombre</th>
+                    <th>Primer Contacto</th>
+                    <th>Último Mensaje</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td colspan="5" class="loading">Cargando...</td></tr>
+            </tbody>
+        </table>
+
+        <h2>📦 Pedidos Recientes</h2>
+        <table id="pedidos-table">
+            <thead>
+                <tr>
+                    <th>Teléfono</th>
+                    <th>Producto</th>
+                    <th>Precio</th>
+                    <th>Método Pago</th>
+                    <th>Estado</th>
+                    <th>Fecha</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td colspan="6" class="loading">Cargando...</td></tr>
+            </tbody>
+        </table>
+
+        <div class="refresh">Auto-refresh cada 30s</div>
+    </div>
+
+    <script>
+        async function cargarDatos() {
+            try {
+                // Stats
+                const statsRes = await fetch('/api/admin/stats');
+                const stats = await statsRes.json();
+
+                document.getElementById('stats').innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.total_leads}</div>
+                        <div class="stat-label">Total Leads</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.leads_hoy}</div>
+                        <div class="stat-label">Leads Hoy</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.conversion_pct}%</div>
+                        <div class="stat-label">Conversión</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.pedidos_hoy}</div>
+                        <div class="stat-label">Pedidos Hoy</div>
+                    </div>
+                `;
+
+                // Leads
+                const leadsRes = await fetch('/api/admin/leads');
+                const leads = await leadsRes.json();
+
+                const leadsHtml = leads.map(l => `
+                    <tr>
+                        <td><a href="https://wa.me/${l.telefono}" target="_blank">${l.telefono}</a></td>
+                        <td>${l.nombre}</td>
+                        <td>${new Date(l.primer_contacto).toLocaleDateString('es-PY')}</td>
+                        <td>${new Date(l.ultimo_mensaje).toLocaleString('es-PY')}</td>
+                        <td>${l.fue_cliente ? '<span class="badge badge-success">Cliente</span>' : '<span class="badge badge-warning">Lead</span>'}</td>
+                    </tr>
+                `).join('');
+
+                document.querySelector('#leads-table tbody').innerHTML = leadsHtml || '<tr><td colspan="5">Sin leads</td></tr>';
+
+                // Pedidos
+                const pedidosRes = await fetch('/api/admin/pedidos');
+                const pedidos = await pedidosRes.json();
+
+                const pedidosHtml = pedidos.map(p => `
+                    <tr>
+                        <td><a href="https://wa.me/${p.telefono}" target="_blank">${p.telefono}</a></td>
+                        <td>${p.producto}</td>
+                        <td>${p.precio}</td>
+                        <td>${p.metodo_pago}</td>
+                        <td>
+                            ${p.estado === 'pagado' ? '<span class="badge badge-success">✓ Pagado</span>' : '<span class="badge badge-danger">⏳ Pendiente</span>'}
+                        </td>
+                        <td>${new Date(p.fecha_pedido).toLocaleString('es-PY')}</td>
+                    </tr>
+                `).join('');
+
+                document.querySelector('#pedidos-table tbody').innerHTML = pedidosHtml || '<tr><td colspan="6">Sin pedidos</td></tr>';
+
+            } catch (e) {
+                console.error('Error:', e);
+            }
+        }
+
+        cargarDatos();
+        setInterval(cargarDatos, 30000);
+    </script>
+</body>
+</html>"""
+    return HTMLResponse(html)
 
 
 @app.get("/api/admin/stats")
