@@ -12,9 +12,12 @@ Servidor principal del agente Belén de Rebody.
 import os
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import PlainTextResponse, JSONResponse
+from datetime import datetime, timedelta
+from fastapi import FastAPI, Request, HTTPException, Cookie
+from fastapi.responses import PlainTextResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
+from sqlalchemy import select, desc, func
 
 from agent.brain import generar_respuesta, detectar_confirmacion_pago
 from agent.memory import (
@@ -25,6 +28,10 @@ from agent.memory import (
     guardar_pedido,
     obtener_ultimo_pedido,
     actualizar_estado_pedido,
+    async_session,
+    Lead,
+    Pedido,
+    Mensaje,
 )
 from agent.providers import obtener_proveedor
 from agent.scheduler import inicializar_scheduler, detener_scheduler
@@ -133,6 +140,11 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Servir archivos estáticos (admin dashboard)
+import os as os_module
+if os_module.path.exists("public"):
+    app.mount("/static", StaticFiles(directory="public"), name="static")
 
 
 @app.get("/")
@@ -432,3 +444,34 @@ async def debug_shopify_test(product_id: str):
         }
     except Exception as e:
         return {"status": "error", "product_id": product_id, "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════
+# ADMIN DASHBOARD ENDPOINTS
+# ═══════════════════════════════════════════════════════════
+
+@app.get("/admin")
+async def admin_dashboard():
+    """Retorna dashboard HTML."""
+    return FileResponse("public/admin.html")
+
+
+@app.get("/api/admin/stats")
+async def admin_stats():
+    """Estadísticas generales."""
+    from agent.admin_api import obtener_stats
+    return await obtener_stats()
+
+
+@app.get("/api/admin/leads")
+async def admin_leads(estado: str = "todos"):
+    """Leads filtrados."""
+    from agent.admin_api import obtener_leads
+    return await obtener_leads(estado)
+
+
+@app.get("/api/admin/pedidos")
+async def admin_pedidos(estado: str = "todos"):
+    """Pedidos filtrados."""
+    from agent.admin_api import obtener_pedidos
+    return await obtener_pedidos(estado)
