@@ -164,8 +164,19 @@ async def webhook_handler(request: Request):
     Procesa cada mensaje con Claude AI y envía respuesta.
     """
     try:
+        # Log del payload completo para debugging
+        body = await request.json()
+        logger.info(f"📨 WEBHOOK PAYLOAD COMPLETO: {body}")
+
+        # Crear un wrapper para pasar el body al proveedor
+        class DebugRequest:
+            async def json(self):
+                return body
+
+        debug_request = DebugRequest()
+
         # Parsear webhook — el proveedor normaliza el formato
-        mensajes = await proveedor.parsear_webhook(request)
+        mensajes = await proveedor.parsear_webhook(debug_request)
 
         if not mensajes:
             logger.debug("No hay mensajes en el webhook")
