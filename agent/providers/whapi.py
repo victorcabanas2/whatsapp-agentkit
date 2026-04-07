@@ -89,10 +89,20 @@ class ProveedorWhapi(ProveedorWhatsApp):
             imagen_url = None
             contexto_payload = None  # Para guardar metadata del anuncio
 
-            # TIPO 1: Mensaje de texto normal
+            # TIPO 1: Mensaje de texto normal (incluyendo replies/citas)
             if tipo_msg == "text":
-                texto = msg.get("text", {}).get("body", "").strip()
-                logger.debug(f"Mensaje de texto: {texto[:50]}...")
+                text_obj = msg.get("text", {})
+                texto = text_obj.get("body", "").strip()
+
+                # Extraer mensaje citado si existe (reply)
+                quoted_msg = text_obj.get("quoted_message", {})
+                if quoted_msg:
+                    quoted_text = quoted_msg.get("body", "").strip()
+                    # Prepender el contexto del mensaje citado
+                    texto = f"[Reply a: \"{quoted_text[:100]}\"] {texto}"
+                    logger.debug(f"Reply detectado: {texto[:60]}...")
+                else:
+                    logger.debug(f"Mensaje de texto: {texto[:50]}...")
 
             # TIPO 2: Click en botón de anuncio/CTA
             elif tipo_msg == "button":
