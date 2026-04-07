@@ -1085,22 +1085,34 @@ async def admin_stats():
 @app.get("/api/admin/leads")
 async def admin_leads(estado: str = "todos"):
     """Leads filtrados."""
-    from agent.admin_api import obtener_leads
-    return await obtener_leads(estado)
+    try:
+        from agent.admin_api import obtener_leads
+        return await obtener_leads(estado)
+    except Exception as e:
+        logger.error(f"Error en admin_leads: {e}", exc_info=True)
+        return []
 
 
 @app.get("/api/admin/pedidos")
 async def admin_pedidos(estado: str = "todos"):
     """Pedidos filtrados."""
-    from agent.admin_api import obtener_pedidos
-    return await obtener_pedidos(estado)
+    try:
+        from agent.admin_api import obtener_pedidos
+        return await obtener_pedidos(estado)
+    except Exception as e:
+        logger.error(f"Error en admin_pedidos: {e}", exc_info=True)
+        return []
 
 
 @app.get("/api/admin/sin-respuesta")
 async def admin_sin_respuesta(horas: int = 2):
     """Leads sin respuesta hace más de X horas."""
-    from agent.admin_api import obtener_mensajes_sin_respuesta
-    return await obtener_mensajes_sin_respuesta(horas)
+    try:
+        from agent.admin_api import obtener_mensajes_sin_respuesta
+        return await obtener_mensajes_sin_respuesta(horas)
+    except Exception as e:
+        logger.error(f"Error en admin_sin_respuesta: {e}", exc_info=True)
+        return []
 
 
 @app.post("/api/admin/enviar-masivo")
@@ -1115,13 +1127,17 @@ async def admin_enviar_masivo(mensaje: str = "", imagen_url: str = ""):
     Returns:
         {"exitosos": int, "fallidos": int, "total": int}
     """
-    from agent.admin_api import enviar_broadcast
+    try:
+        from agent.admin_api import enviar_broadcast
 
-    if not mensaje and not imagen_url:
-        return {"error": "Debe proporcionar al menos un mensaje o imagen"}
+        if not mensaje and not imagen_url:
+            return {"error": "Debe proporcionar al menos un mensaje o imagen"}
 
-    resultado = await enviar_broadcast(mensaje, imagen_url, proveedor)
-    return resultado
+        resultado = await enviar_broadcast(mensaje, imagen_url, proveedor)
+        return resultado
+    except Exception as e:
+        logger.error(f"Error en enviar_masivo: {e}", exc_info=True)
+        return {"exitosos": 0, "fallidos": 0, "total": 0, "error": str(e)}
 
 
 @app.post("/api/admin/enviar-imagen")
@@ -1164,16 +1180,20 @@ async def admin_clientes_importados(pagina: int = 1, por_pagina: int = 20, q: st
     Returns:
         {"clientes": [...], "total": int, "pagina": int, "total_paginas": int}
     """
-    from agent.admin_api import obtener_clientes_importados, buscar_clientes_importados
+    try:
+        from agent.admin_api import obtener_clientes_importados, buscar_clientes_importados
 
-    if q:
-        # Búsqueda
-        clientes = await buscar_clientes_importados(q)
-        return {"clientes": clientes, "total": len(clientes), "pagina": 1, "total_paginas": 1}
-    else:
-        # Paginación
-        resultado = await obtener_clientes_importados(pagina, por_pagina)
-        return resultado
+        if q:
+            # Búsqueda
+            clientes = await buscar_clientes_importados(q)
+            return {"clientes": clientes, "total": len(clientes), "pagina": 1, "total_paginas": 1}
+        else:
+            # Paginación
+            resultado = await obtener_clientes_importados(pagina, por_pagina)
+            return resultado
+    except Exception as e:
+        logger.error(f"Error en admin_clientes_importados: {e}", exc_info=True)
+        return {"clientes": [], "total": 0, "pagina": pagina, "total_paginas": 0}
 
 
 @app.post("/api/admin/tomar-control")
@@ -1187,19 +1207,18 @@ async def admin_tomar_control(telefono: str = ""):
     Returns:
         {"exito": bool, "mensaje": str}
     """
-    from agent.memory import tomar_control
-
     if not telefono:
         return {"exito": False, "mensaje": "Teléfono requerido"}
 
     try:
+        from agent.memory import tomar_control
         exito = await tomar_control(telefono)
         return {
             "exito": exito,
             "mensaje": "Bot pausado - Humano en control" if exito else "No se pudo pausar"
         }
     except Exception as e:
-        logger.error(f"Error pausando bot para {telefono}: {e}")
+        logger.error(f"Error pausando bot para {telefono}: {e}", exc_info=True)
         return {"exito": False, "mensaje": str(e)}
 
 
@@ -1214,19 +1233,18 @@ async def admin_liberar_control(telefono: str = ""):
     Returns:
         {"exito": bool, "mensaje": str}
     """
-    from agent.memory import liberar_control
-
     if not telefono:
         return {"exito": False, "mensaje": "Teléfono requerido"}
 
     try:
+        from agent.memory import liberar_control
         exito = await liberar_control(telefono)
         return {
             "exito": exito,
             "mensaje": "Bot reactivado" if exito else "No se pudo reactivar"
         }
     except Exception as e:
-        logger.error(f"Error reactivando bot para {telefono}: {e}")
+        logger.error(f"Error reactivando bot para {telefono}: {e}", exc_info=True)
         return {"exito": False, "mensaje": str(e)}
 
 
@@ -1239,11 +1257,10 @@ async def admin_importar_excel():
     Returns:
         {"exitosos": int, "errores": int, "total": int, ...}
     """
-    from agent.excel_parser import importar_clientes_de_archivo_default
-
     try:
+        from agent.excel_parser import importar_clientes_de_archivo_default
         resultado = await importar_clientes_de_archivo_default()
         return resultado
     except Exception as e:
-        logger.error(f"Error importando Excel: {e}")
-        return {"error": str(e)}
+        logger.error(f"Error importando Excel: {e}", exc_info=True)
+        return {"error": str(e), "exitosos": 0, "errores": 0, "duplicados": 0}
