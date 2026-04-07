@@ -27,6 +27,10 @@ from agent.memory import (
     guardar_pedido,
     obtener_ultimo_pedido,
     actualizar_estado_pedido,
+    actualizar_lead_scoring,
+    obtener_lead,
+    marcar_alerta_vendedor,
+    obtener_resumen_cliente,
     async_session,
     Lead,
     Pedido,
@@ -55,6 +59,132 @@ proveedor = obtener_proveedor()
 
 # URL de imagen de datos bancarios para TRANSFERENCIA
 IMAGEN_DATOS_BANCARIOS = "https://i.imgur.com/WYPWrdl.png"
+
+# Número del vendedor para alertas (desde .env)
+VENDEDOR_WHATSAPP = os.getenv("VENDEDOR_WHATSAPP", "")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+
+
+# ════════════════════════════════════════════════════════════
+# LEAD SCORING — Detección de intención y urgencia
+# ════════════════════════════════════════════════════════════
+
+KEYWORDS_HOT = [
+    "compro", "me llevo", "quiero comprarlo", "cómo pago",
+    "dale", "cómo hago la transferencia", "cuándo llega", "listo",
+    "ya me decide", "adelante con eso", "va", "que sea"
+]
+
+KEYWORDS_WARM = [
+    "precio", "cuánto", "cuánto cuesta", "cuánto vale", "qué incluye",
+    "garantía", "envío", "disponible", "stock", "características",
+    "diferencia entre", "cuál es mejor"
+]
+
+KEYWORDS_URGENCY = [
+    "urgente", "hoy", "ya", "lo necesito ahora", "para mañana",
+    "esta semana", "rápido", "apurado", "ASAP"
+]
+
+KEYWORDS_OBJECTION = [
+    "muy caro", "caro", "lo pienso", "después", "no me interesa",
+    "voy a pensar", "es mucho", "es bastante", "otro momento",
+    "no tengo presupuesto", "está caro"
+]
+
+
+async def calcular_lead_score(telefono: str, mensaje_usuario: str, lead: Lead | None = None):
+    """
+    Calcula el score del lead basado en palabras clave.
+    Actualiza en la BD: score, intencion, urgencia, objeciones.
+
+    Scoring:
+    - Base: 20 puntos
+    - +30 si algún keyword HOT → intencion = "hot"
+    - +15 si algún keyword WARM → intencion = "warm"
+    - +20 si urgency keyword → urgencia = "alta"
+    - +5 por cada mensaje del cliente → engagement
+    - -10 si keyword de objeción → guardar en objeciones
+    """
+    if not lead:
+        lead = await obtener_lead(telefono)
+    if not lead:
+        return
+
+    mensaje_lower = mensaje_usuario.lower()
+
+    # Lógica de scoring
+    nuevo_score = 20  # Base
+    nueva_intencion = "cold"
+    nueva_urgencia = "baja"
+    nuevas_objeciones = lead.objeciones or ""
+
+    # Detectar keywords HOT
+    if any(keyword in mensaje_lower for keyword in KEYWORDS_HOT):
+        nuevo_score += 30
+        nueva_intencion = "hot"
+    # Si no es hot, detectar WARM
+    elif any(keyword in mensaje_lower for keyword in KEYWORDS_WARM):
+        nuevo_score += 15
+        nueva_intencion = "warm"
+
+    # Detectar urgencia
+    if any(keyword in mensaje_lower for keyword in KEYWORDS_URGENCY):
+        nuevo_score += 20
+        nueva_urgencia = "alta"
+    elif nueva_intencion == "warm":
+        nueva_urgencia = "media"
+
+    # Detectar objeciones
+    for objecion in KEYWORDS_OBJECTION:
+        if objecion in mensaje_lower:
+            nuevo_score -= 10
+            if objecion not in nuevas_objeciones:
+                nuevas_objeciones += f", {objecion}" if nuevas_objeciones else objecion
+            break
+
+    # Actualizar en BD
+    await actualizar_lead_scoring(
+        telefono,
+        score=nuevo_score,
+        intencion=nueva_intencion,
+        urgencia=nueva_urgencia,
+        objeciones=nuevas_objeciones if nuevas_objeciones else None
+    )
+
+    logger.debug(f"📊 Score {telefono}: {nuevo_score} ({nueva_intencion}), urgencia: {nueva_urgencia}")
+
+
+async def enviar_alerta_vendedor(tipo: str, telefono: str, detalle: str = ""):
+    """
+    Envía alerta al vendedor vía WhatsApp.
+
+    Tipos: "nuevo_lead", "hot_lead", "pago_confirmado", "sin_respuesta"
+    """
+    if not VENDEDOR_WHATSAPP:
+        logger.warning("⚠️ VENDEDOR_WHATSAPP no configurado - alertas deshabilitadas")
+        return
+
+    try:
+        mensajes_alerta = {
+            "nuevo_lead": f"🆕 Nuevo lead: {detalle}",
+            "hot_lead": f"🔥 LEAD CALIENTE:\n{detalle}",
+            "pago_confirmado": f"✅ PAGO CONFIRMADO:\n{detalle}",
+            "sin_respuesta": f"⚠️ Sin respuesta (>4h):\n{detalle}"
+        }
+
+        mensaje = mensajes_alerta.get(tipo, detalle)
+
+        logger.info(f"📢 Enviando alerta al vendedor: {tipo}")
+        exito = await proveedor.enviar_mensaje(VENDEDOR_WHATSAPP, mensaje)
+
+        if exito:
+            logger.info(f"✓ Alerta enviada al vendedor")
+        else:
+            logger.error(f"✗ Fallo al enviar alerta al vendedor")
+
+    except Exception as e:
+        logger.error(f"❌ Error enviando alerta: {e}")
 
 
 def detectar_opcion_pago(respuesta_agente: str) -> str | None:
@@ -204,7 +334,10 @@ async def webhook_handler(request: Request):
 
             try:
                 # Registrar lead automáticamente (si no existe, lo crea; si existe, actualiza último mensaje)
-                await registrar_lead(msg.telefono)
+                lead = await registrar_lead(msg.telefono)
+
+                # DETECTAR NUEVO LEAD (primera vez que contacta)
+                es_nuevo_lead = (datetime.utcnow() - lead.primer_contacto).total_seconds() < 60  # Hace menos de 1 min
 
                 # Obtener historial anterior (sin el mensaje actual)
                 historial = await obtener_historial(msg.telefono)
@@ -226,6 +359,41 @@ async def webhook_handler(request: Request):
 
                 # Guardar mensaje del usuario
                 await guardar_mensaje(msg.telefono, "user", msg.texto)
+
+                # ═══════════════════════════════════════════════════════════
+                # LEAD SCORING — Clasificar cliente por potencial
+                # ═══════════════════════════════════════════════════════════
+
+                score_anterior = lead.score
+                intencion_anterior = lead.intencion
+
+                await calcular_lead_score(msg.telefono, msg.texto, lead)
+
+                # Recargar lead para obtener nuevos valores
+                lead = await obtener_lead(msg.telefono)
+
+                # ═══════════════════════════════════════════════════════════
+                # ALERTAS AL VENDEDOR
+                # ═══════════════════════════════════════════════════════════
+
+                # ALERT 1: Nuevo lead
+                if es_nuevo_lead and not lead.alerta_vendedor_enviada:
+                    nombre = lead.nombre or msg.telefono
+                    await enviar_alerta_vendedor(
+                        "nuevo_lead",
+                        msg.telefono,
+                        f"{nombre} ({msg.telefono})\nDice: '{msg.texto[:80]}...'"
+                    )
+                    await marcar_alerta_vendedor(msg.telefono)
+
+                # ALERT 2: Lead pasó de warm/cold a hot
+                if (score_anterior < 50 or intencion_anterior != "hot") and lead.intencion == "hot":
+                    nombre = lead.nombre or msg.telefono
+                    await enviar_alerta_vendedor(
+                        "hot_lead",
+                        msg.telefono,
+                        f"{nombre} ({msg.telefono})\nScore: {lead.score}/100\nDice: '{msg.texto[:80]}...'"
+                    )
 
                 # Guardar respuesta del agente
                 await guardar_mensaje(msg.telefono, "assistant", respuesta)
@@ -264,6 +432,15 @@ async def webhook_handler(request: Request):
                         # Actualizar estado a pagado
                         await actualizar_estado_pedido(ultimo_pedido.id, "pagado")
                         logger.info(f"💰 Pedido #{ultimo_pedido.id} marcado como PAGADO")
+
+                        # ALERT 3: Pago confirmado
+                        nombre = lead.nombre or msg.telefono
+                        await enviar_alerta_vendedor(
+                            "pago_confirmado",
+                            msg.telefono,
+                            f"{nombre} ({msg.telefono})\nProducto: {ultimo_pedido.producto}\nPrecio: {ultimo_pedido.precio} Gs"
+                        )
+
                     else:
                         logger.warning(f"⚠️ No hay pedido pendiente para {msg.telefono} - confirmación sin pedido en BD")
 
@@ -443,10 +620,53 @@ async def debug_shopify_test(product_id: str):
 # ADMIN DASHBOARD ENDPOINTS
 # ═══════════════════════════════════════════════════════════
 
-@app.get("/admin")
-async def admin_dashboard():
-    """Retorna dashboard HTML."""
-    html = """<!DOCTYPE html>
+def get_login_html():
+    """Página de login para el dashboard."""
+    return """<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceso Admin - Belén</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-container { background: #1e293b; border-radius: 8px; padding: 40px; max-width: 400px; width: 100%; }
+        .login-container h1 { text-align: center; margin-bottom: 30px; font-size: 24px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; color: #94a3b8; font-weight: 500; }
+        .form-group input { width: 100%; padding: 10px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; border-radius: 4px; font-size: 14px; }
+        .form-group input:focus { outline: none; border-color: #3b82f6; }
+        .btn { width: 100%; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 14px; }
+        .btn:hover { background: #2563eb; }
+        .error { color: #ef4444; font-size: 12px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>🔒 Acceso Admin</h1>
+        <form onsubmit="login(event)">
+            <div class="form-group">
+                <label>Contraseña</label>
+                <input type="password" id="pwd" placeholder="Ingresa la contraseña" required>
+            </div>
+            <button type="submit" class="btn">Acceder</button>
+        </form>
+    </div>
+    <script>
+        function login(e) {
+            e.preventDefault();
+            const pwd = document.getElementById('pwd').value;
+            window.location.href = '/admin?pwd=' + encodeURIComponent(pwd);
+        }
+    </script>
+</body>
+</html>"""
+
+
+def get_dashboard_html():
+    """Página del dashboard con leads, pedidos y analytics."""
+    return """<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -455,72 +675,96 @@ async def admin_dashboard():
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        h1 { margin: 20px 0; }
-        h2 { margin: 30px 0 15px 0; }
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }
-        .stat-card { background: #1e293b; border-radius: 8px; padding: 20px; border-left: 4px solid #10b981; }
-        .stat-number { font-size: 32px; font-weight: bold; color: #10b981; }
-        .stat-label { color: #94a3b8; font-size: 14px; margin-top: 5px; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        h1 { margin: 20px 0; font-size: 28px; }
+        h2 { margin: 30px 0 15px 0; font-size: 18px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .stat-card { background: #1e293b; border-radius: 8px; padding: 16px; border-left: 4px solid #10b981; }
+        .stat-card.hot { border-left-color: #ef4444; }
+        .stat-card.pending { border-left-color: #f59e0b; }
+        .stat-number { font-size: 28px; font-weight: bold; color: #10b981; }
+        .stat-card.hot .stat-number { color: #ef4444; }
+        .stat-card.pending .stat-number { color: #f59e0b; }
+        .stat-label { color: #94a3b8; font-size: 12px; margin-top: 4px; }
         table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; margin: 20px 0; }
-        th { background: #0f172a; padding: 12px; text-align: left; font-weight: 600; border-bottom: 1px solid #334155; }
-        td { padding: 12px; border-bottom: 1px solid #334155; }
+        th { background: #0f172a; padding: 10px; text-align: left; font-weight: 600; font-size: 12px; border-bottom: 1px solid #334155; }
+        td { padding: 10px; border-bottom: 1px solid #334155; font-size: 13px; }
         tr:hover { background: #334155; }
-        a { color: #3b82f6; text-decoration: none; }
+        a { color: #3b82f6; text-decoration: none; cursor: pointer; }
         a:hover { text-decoration: underline; }
-        .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+        .badge { display: inline-block; padding: 3px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+        .badge-hot { background: #ef4444; color: white; }
+        .badge-warm { background: #f59e0b; color: black; }
+        .badge-cold { background: #6b7280; color: white; }
         .badge-success { background: #10b981; color: black; }
-        .badge-warning { background: #f59e0b; color: black; }
         .badge-danger { background: #ef4444; color: white; }
+        .badge-pending { background: #f59e0b; color: black; }
         .refresh { text-align: right; margin: 20px 0; font-size: 12px; color: #94a3b8; }
         .loading { text-align: center; padding: 40px; }
+        .copy-btn { background: none; border: none; color: #3b82f6; cursor: pointer; font-size: 12px; padding: 0; }
+        .copy-btn:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📊 Panel Admin - Belén</h1>
-
-        <div class="stats" id="stats">
-            <div class="loading">Cargando...</div>
+        <div class="header">
+            <h1>📊 Panel Admin - Belén</h1>
+            <div style="font-size: 12px; color: #94a3b8;">Auto-refresh cada 30s</div>
         </div>
 
-        <h2>👥 Leads Recientes</h2>
+        <div class="stats" id="stats">
+            <div style="grid-column: 1/-1; text-align: center;">Cargando...</div>
+        </div>
+
+        <h2>🔥 Leads HOT (Score alto)</h2>
+        <table id="hot-leads-table">
+            <thead><tr>
+                <th>Teléfono</th><th>Nombre</th><th>Producto</th><th>Score</th><th>Intención</th><th>Último Msg</th><th>Acción</th>
+            </tr></thead>
+            <tbody><tr><td colspan="7" class="loading">Cargando...</td></tr></tbody>
+        </table>
+
+        <h2>👥 Todos los Leads</h2>
         <table id="leads-table">
-            <thead>
-                <tr>
-                    <th>Teléfono</th>
-                    <th>Nombre</th>
-                    <th>Primer Contacto</th>
-                    <th>Último Mensaje</th>
-                    <th>Estado</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td colspan="5" class="loading">Cargando...</td></tr>
-            </tbody>
+            <thead><tr>
+                <th>Teléfono</th><th>Nombre</th><th>Producto</th><th>Score</th><th>Intención</th><th>Último Msg</th><th>Estado</th>
+            </tr></thead>
+            <tbody><tr><td colspan="7" class="loading">Cargando...</td></tr></tbody>
+        </table>
+
+        <h2>⏳ Sin Respuesta (>2h)</h2>
+        <table id="sin-respuesta-table">
+            <thead><tr>
+                <th>Teléfono</th><th>Nombre</th><th>Desde hace</th><th>Score</th><th>Último Msg</th><th>Acción</th>
+            </tr></thead>
+            <tbody><tr><td colspan="6" class="loading">Cargando...</td></tr></tbody>
         </table>
 
         <h2>📦 Pedidos Recientes</h2>
         <table id="pedidos-table">
-            <thead>
-                <tr>
-                    <th>Teléfono</th>
-                    <th>Producto</th>
-                    <th>Precio</th>
-                    <th>Método Pago</th>
-                    <th>Estado</th>
-                    <th>Fecha</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td colspan="6" class="loading">Cargando...</td></tr>
-            </tbody>
+            <thead><tr>
+                <th>Teléfono</th><th>Producto</th><th>Precio</th><th>Método</th><th>Estado</th><th>Fecha</th>
+            </tr></thead>
+            <tbody><tr><td colspan="6" class="loading">Cargando...</td></tr></tbody>
         </table>
-
-        <div class="refresh">Auto-refresh cada 30s</div>
     </div>
 
     <script>
+        function getBadgeIntention(intencion) {
+            const badges = {
+                'hot': '<span class="badge badge-hot">🔥 Hot</span>',
+                'warm': '<span class="badge badge-warm">⚡ Warm</span>',
+                'cold': '<span class="badge badge-cold">❄️ Cold</span>'
+            };
+            return badges[intencion] || intencion;
+        }
+
+        function copyPhone(tel) {
+            navigator.clipboard.writeText(tel);
+            alert('Copiado: ' + tel);
+        }
+
         async function cargarDatos() {
             try {
                 // Stats
@@ -528,58 +772,67 @@ async def admin_dashboard():
                 const stats = await statsRes.json();
 
                 document.getElementById('stats').innerHTML = `
-                    <div class="stat-card">
-                        <div class="stat-number">${stats.total_leads}</div>
-                        <div class="stat-label">Total Leads</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">${stats.leads_hoy}</div>
-                        <div class="stat-label">Leads Hoy</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">${stats.conversion_pct}%</div>
-                        <div class="stat-label">Conversión</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">${stats.pedidos_hoy}</div>
-                        <div class="stat-label">Pedidos Hoy</div>
-                    </div>
+                    <div class="stat-card"><div class="stat-number">${stats.total_leads}</div><div class="stat-label">Total Leads</div></div>
+                    <div class="stat-card"><div class="stat-number">${stats.leads_hoy}</div><div class="stat-label">Leads Hoy</div></div>
+                    <div class="stat-card hot"><div class="stat-number">${stats.hot_leads}</div><div class="stat-label">🔥 Hot Leads</div></div>
+                    <div class="stat-card"><div class="stat-number">${stats.conversion_pct}%</div><div class="stat-label">Conversión</div></div>
+                    <div class="stat-card pending"><div class="stat-number">${stats.pedidos_pendientes}</div><div class="stat-label">Pedidos Pendientes</div></div>
+                    <div class="stat-card"><div class="stat-number">${stats.sin_respuesta_2h}</div><div class="stat-label">Sin Respuesta >2h</div></div>
                 `;
 
-                // Leads
+                // Hot leads
+                const hotRes = await fetch('/api/admin/leads?estado=hot&limite=5');
+                const hotLeads = await hotRes.json();
+                document.querySelector('#hot-leads-table tbody').innerHTML = hotLeads.length > 0 ?
+                    hotLeads.map(l => `<tr>
+                        <td><a onclick="copyPhone('${l.telefono}')" title="Copiar">${l.telefono}</a></td>
+                        <td>${l.nombre}</td>
+                        <td>${l.producto_preferido}</td>
+                        <td>${l.score}</td>
+                        <td>${getBadgeIntention(l.intencion)}</td>
+                        <td>${new Date(l.ultimo_mensaje).toLocaleTimeString('es-PY')}</td>
+                        <td><a href="https://wa.me/${l.telefono}" target="_blank">📱</a></td>
+                    </tr>`).join('') : '<tr><td colspan="7">Sin leads hot</td></tr>';
+
+                // All leads
                 const leadsRes = await fetch('/api/admin/leads');
                 const leads = await leadsRes.json();
-
-                const leadsHtml = leads.map(l => `
-                    <tr>
-                        <td><a href="https://wa.me/${l.telefono}" target="_blank">${l.telefono}</a></td>
+                document.querySelector('#leads-table tbody').innerHTML = leads.length > 0 ?
+                    leads.map(l => `<tr>
+                        <td><a onclick="copyPhone('${l.telefono}')">${l.telefono}</a></td>
                         <td>${l.nombre}</td>
-                        <td>${new Date(l.primer_contacto).toLocaleDateString('es-PY')}</td>
-                        <td>${new Date(l.ultimo_mensaje).toLocaleString('es-PY')}</td>
-                        <td>${l.fue_cliente ? '<span class="badge badge-success">Cliente</span>' : '<span class="badge badge-warning">Lead</span>'}</td>
-                    </tr>
-                `).join('');
+                        <td>${l.producto_preferido}</td>
+                        <td>${l.score}</td>
+                        <td>${getBadgeIntention(l.intencion)}</td>
+                        <td>${new Date(l.ultimo_mensaje).toLocaleTimeString('es-PY')}</td>
+                        <td>${l.fue_cliente ? '<span class="badge badge-success">✓ Cliente</span>' : '<span class="badge badge-pending">Lead</span>'}</td>
+                    </tr>`).join('') : '<tr><td colspan="7">Sin leads</td></tr>';
 
-                document.querySelector('#leads-table tbody').innerHTML = leadsHtml || '<tr><td colspan="5">Sin leads</td></tr>';
+                // Sin respuesta
+                const sinRespRes = await fetch('/api/admin/sin-respuesta?horas=2');
+                const sinResp = await sinRespRes.json();
+                document.querySelector('#sin-respuesta-table tbody').innerHTML = sinResp.length > 0 ?
+                    sinResp.map(l => `<tr>
+                        <td><a onclick="copyPhone('${l.telefono}')">${l.telefono}</a></td>
+                        <td>${l.nombre}</td>
+                        <td>${l.horas_sin_respuesta}h</td>
+                        <td>${l.score}</td>
+                        <td>${l.ultimo_mensaje}</td>
+                        <td><a href="https://wa.me/${l.telefono}" target="_blank">📱 Escribir</a></td>
+                    </tr>`).join('') : '<tr><td colspan="6">Todos respondidos</td></tr>';
 
                 // Pedidos
                 const pedidosRes = await fetch('/api/admin/pedidos');
                 const pedidos = await pedidosRes.json();
-
-                const pedidosHtml = pedidos.map(p => `
-                    <tr>
-                        <td><a href="https://wa.me/${p.telefono}" target="_blank">${p.telefono}</a></td>
+                document.querySelector('#pedidos-table tbody').innerHTML = pedidos.length > 0 ?
+                    pedidos.map(p => `<tr>
+                        <td><a onclick="copyPhone('${p.telefono}')">${p.telefono}</a></td>
                         <td>${p.producto}</td>
                         <td>${p.precio}</td>
                         <td>${p.metodo_pago}</td>
-                        <td>
-                            ${p.estado === 'pagado' ? '<span class="badge badge-success">✓ Pagado</span>' : '<span class="badge badge-danger">⏳ Pendiente</span>'}
-                        </td>
+                        <td>${p.estado === 'pagado' ? '<span class="badge badge-success">✓ Pagado</span>' : '<span class="badge badge-danger">⏳ Pendiente</span>'}</td>
                         <td>${new Date(p.fecha_pedido).toLocaleString('es-PY')}</td>
-                    </tr>
-                `).join('');
-
-                document.querySelector('#pedidos-table tbody').innerHTML = pedidosHtml || '<tr><td colspan="6">Sin pedidos</td></tr>';
+                    </tr>`).join('') : '<tr><td colspan="6">Sin pedidos</td></tr>';
 
             } catch (e) {
                 console.error('Error:', e);
@@ -591,7 +844,16 @@ async def admin_dashboard():
     </script>
 </body>
 </html>"""
-    return HTMLResponse(html)
+
+
+@app.get("/admin")
+async def admin_dashboard(pwd: str = ""):
+    """Retorna dashboard HTML con autenticación por password."""
+    # Verificar password
+    if pwd != ADMIN_PASSWORD:
+        return HTMLResponse(get_login_html())
+
+    return HTMLResponse(get_dashboard_html())
 
 
 @app.get("/api/admin/stats")
@@ -613,3 +875,10 @@ async def admin_pedidos(estado: str = "todos"):
     """Pedidos filtrados."""
     from agent.admin_api import obtener_pedidos
     return await obtener_pedidos(estado)
+
+
+@app.get("/api/admin/sin-respuesta")
+async def admin_sin_respuesta(horas: int = 2):
+    """Leads sin respuesta hace más de X horas."""
+    from agent.admin_api import obtener_mensajes_sin_respuesta
+    return await obtener_mensajes_sin_respuesta(horas)

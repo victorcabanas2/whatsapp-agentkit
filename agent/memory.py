@@ -11,8 +11,9 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, select, Integer, desc
+from sqlalchemy import String, Text, DateTime, select, Integer, desc, Boolean
 from dotenv import load_dotenv
+from datetime import timedelta
 
 load_dotenv()
 
@@ -70,8 +71,18 @@ class Lead(Base):
     seguimiento_1dia_enviado: Mapped[bool] = mapped_column(default=False)
     seguimiento_3dias_enviado: Mapped[bool] = mapped_column(default=False)
 
+    # Lead Scoring
+    score: Mapped[int] = mapped_column(Integer, default=20)  # 0-100
+    intencion: Mapped[str] = mapped_column(String(10), default="cold")  # cold/warm/hot
+    urgencia: Mapped[str] = mapped_column(String(10), default="baja")  # baja/media/alta
+    producto_preferido: Mapped[str] = mapped_column(String(200), nullable=True)
+    presupuesto_estimado: Mapped[str] = mapped_column(String(100), nullable=True)
+    objeciones: Mapped[str] = mapped_column(Text, nullable=True)
+    proximo_followup: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    alerta_vendedor_enviada: Mapped[bool] = mapped_column(default=False)
+
     def __repr__(self):
-        return f"<Lead {self.telefono} - {self.primer_contacto}>"
+        return f"<Lead {self.telefono} - {self.intencion} - {self.primer_contacto}>"
 
 
 class CarritoAbandonado(Base):
@@ -432,4 +443,161 @@ async def actualizar_estado_pedido(pedido_id: int, nuevo_estado: str):
         pedido = result.scalar_one_or_none()
         if pedido:
             pedido.estado = nuevo_estado
+            await session.commit()
+
+
+# ════════════════════════════════════════════════════════════
+# FUNCIONES PARA LEAD SCORING Y ANÁLISIS
+# ════════════════════════════════════════════════════════════
+
+async def actualizar_lead_scoring(
+    telefono: str,
+    score: int = None,
+    intencion: str = None,
+    urgencia: str = None,
+    producto_preferido: str = None,
+    presupuesto_estimado: str = None,
+    objeciones: str = None,
+    proximo_followup: datetime = None
+):
+    """
+    Actualiza los campos de scoring de un lead.
+    Solo actualiza los campos que no son None.
+    """
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+
+        if lead:
+            if score is not None:
+                lead.score = max(0, min(100, score))  # Clampear entre 0-100
+            if intencion is not None:
+                lead.intencion = intencion
+            if urgencia is not None:
+                lead.urgencia = urgencia
+            if producto_preferido is not None:
+                lead.producto_preferido = producto_preferido
+            if presupuesto_estimado is not None:
+                lead.presupuesto_estimado = presupuesto_estimado
+            if objeciones is not None:
+                lead.objeciones = objeciones
+            if proximo_followup is not None:
+                lead.proximo_followup = proximo_followup
+
+            await session.commit()
+
+
+async def obtener_resumen_cliente(telefono: str) -> dict:
+    """
+    Obtiene un resumen completo del cliente para incluir en el context del agente.
+
+    Returns:
+        {
+            "pedidos_previos": "2 compras (Theragun Mini en dic 2025, Depuffing Wand en ene 2026)",
+            "objeciones": "muy caro, lo pienso",
+            "producto_preferido": "Theragun Mini",
+            "score": 75,
+            "intencion": "warm",
+            "urgencia": "media"
+        }
+    """
+    async with async_session() as session:
+        # Obtener lead
+        lead_query = select(Lead).where(Lead.telefono == telefono)
+        lead_result = await session.execute(lead_query)
+        lead = lead_result.scalar_one_or_none()
+
+        if not lead:
+            return {}
+
+        # Obtener pedidos del cliente
+        pedidos_query = select(Pedido).where(Pedido.telefono == telefono).order_by(desc(Pedido.fecha_pedido))
+        pedidos_result = await session.execute(pedidos_query)
+        pedidos = pedidos_result.scalars().all()
+
+        pedidos_texto = ""
+        if pedidos:
+            lista_productos = ", ".join([
+                f"{p.producto} ({p.fecha_pedido.strftime('%b %Y')})"
+                for p in pedidos
+            ])
+            pedidos_texto = f"{len(pedidos)} compras: {lista_productos}"
+
+        return {
+            "pedidos_previos": pedidos_texto,
+            "objeciones": lead.objeciones or "",
+            "producto_preferido": lead.producto_preferido or "",
+            "score": lead.score,
+            "intencion": lead.intencion,
+            "urgencia": lead.urgencia
+        }
+
+
+async def obtener_lead(telefono: str) -> Lead | None:
+    """Obtiene un lead específico por teléfono."""
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        return result.scalar_one_or_none()
+
+
+async def obtener_leads_sin_respuesta_horas(horas: int = 4) -> list[dict]:
+    """
+    Obtiene leads sin respuesta hace más de X horas.
+
+    Un lead sin respuesta es aquel donde el último mensaje en la tabla 'mensajes'
+    tiene role='user' (cliente escribió) y hace más de X horas.
+
+    Args:
+        horas: Horas sin respuesta (default: 4)
+
+    Returns:
+        [{telefono, nombre, ultimo_mensaje, horas_sin_respuesta, score, intencion}, ...]
+    """
+    async with async_session() as session:
+        ahora = datetime.utcnow()
+        hace_x_horas = ahora - timedelta(hours=horas)
+
+        # Obtener todos los leads
+        leads_query = select(Lead)
+        leads_result = await session.execute(leads_query)
+        leads = leads_result.scalars().all()
+
+        leads_sin_respuesta = []
+
+        for lead in leads:
+            # Obtener último mensaje del cliente en esta conversación
+            msg_query = (
+                select(Mensaje)
+                .where(Mensaje.telefono == lead.telefono)
+                .where(Mensaje.role == "user")
+                .order_by(desc(Mensaje.timestamp))
+                .limit(1)
+            )
+            msg_result = await session.execute(msg_query)
+            ultimo_msg_cliente = msg_result.scalar_one_or_none()
+
+            if ultimo_msg_cliente and ultimo_msg_cliente.timestamp < hace_x_horas:
+                horas_esperando = (ahora - ultimo_msg_cliente.timestamp).total_seconds() / 3600
+                leads_sin_respuesta.append({
+                    "telefono": lead.telefono,
+                    "nombre": lead.nombre or "Sin nombre",
+                    "ultimo_mensaje": ultimo_msg_cliente.content[:100],  # Primeros 100 chars
+                    "horas_sin_respuesta": int(horas_esperando),
+                    "score": lead.score,
+                    "intencion": lead.intencion
+                })
+
+        return sorted(leads_sin_respuesta, key=lambda x: x["horas_sin_respuesta"], reverse=True)
+
+
+async def marcar_alerta_vendedor(telefono: str):
+    """Marca que se envió alerta de nuevo lead al vendedor."""
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+        if lead:
+            lead.alerta_vendedor_enviada = True
             await session.commit()
