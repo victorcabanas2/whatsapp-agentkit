@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta
-from sqlalchemy import select, desc, func, or_, ilike
+from sqlalchemy import select, desc, func, or_
 from agent.memory import async_session, Lead, Pedido, Mensaje
 
 logger = logging.getLogger("agentkit")
