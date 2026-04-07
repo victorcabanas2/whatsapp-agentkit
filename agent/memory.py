@@ -68,8 +68,15 @@ class Lead(Base):
     primer_contacto: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     ultimo_mensaje: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     fue_cliente: Mapped[bool] = mapped_column(default=False)  # Si compró
+
+    # Clientes antiguos (previos a AgentKit)
+    es_cliente_previo: Mapped[bool] = mapped_column(default=False)
+    productos_comprados_previos: Mapped[str] = mapped_column(Text, nullable=True)
+    historial_previo_resumen: Mapped[str] = mapped_column(Text, nullable=True)
+
     seguimiento_1dia_enviado: Mapped[bool] = mapped_column(default=False)
     seguimiento_3dias_enviado: Mapped[bool] = mapped_column(default=False)
+    en_manos_humanas: Mapped[bool] = mapped_column(default=False)  # Bot pausa si True
 
     # Lead Scoring
     score: Mapped[int] = mapped_column(Integer, default=20)  # 0-100
@@ -601,3 +608,87 @@ async def marcar_alerta_vendedor(telefono: str):
         if lead:
             lead.alerta_vendedor_enviada = True
             await session.commit()
+
+
+# ════════════════════════════════════════════════════════════
+# CLIENTES ANTIGUOS — Contexto de clientes previos a AgentKit
+# ════════════════════════════════════════════════════════════
+
+async def tomar_control(telefono: str) -> bool:
+    """Pausa el bot para este cliente — un humano toma control."""
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+        if lead:
+            lead.en_manos_humanas = True
+            await session.commit()
+            return True
+        return False
+
+
+async def liberar_control(telefono: str) -> bool:
+    """Reactiva el bot para este cliente."""
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+        if lead:
+            lead.en_manos_humanas = False
+            await session.commit()
+            return True
+        return False
+
+
+async def obtener_contexto_cliente_antiguo(telefono: str) -> dict | None:
+    """Obtiene contexto de un cliente antiguo (previo a AgentKit)."""
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+
+        if not lead or not lead.es_cliente_previo:
+            return None
+
+        return {
+            "nombre": lead.nombre,
+            "es_cliente_antiguo": True,
+            "productos_comprados": lead.productos_comprados_previos,
+            "historial_resumen": lead.historial_previo_resumen
+        }
+
+
+async def marcar_cliente_como_antiguo(telefono: str, nombre: str, productos_comprados: str, historial_resumen: str) -> bool:
+    """Marca un cliente como antiguo (cliente previo a AgentKit)."""
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+
+        if not lead:
+            lead = Lead(
+                telefono=telefono,
+                nombre=nombre,
+                es_cliente_previo=True,
+                fue_cliente=True,
+                productos_comprados_previos=productos_comprados,
+                historial_previo_resumen=historial_resumen
+            )
+            session.add(lead)
+        else:
+            lead.es_cliente_previo = True
+            lead.fue_cliente = True
+            lead.nombre = nombre or lead.nombre
+            lead.productos_comprados_previos = productos_comprados
+            lead.historial_previo_resumen = historial_resumen
+
+        await session.commit()
+        return True
+
+
+async def obtener_todos_los_leads() -> list[Lead]:
+    """Obtiene la lista de todos los leads registrados."""
+    async with async_session() as session:
+        query = select(Lead).order_by(desc(Lead.ultimo_mensaje))
+        result = await session.execute(query)
+        return result.scalars().all()
