@@ -131,9 +131,27 @@ class Pedido(Base):
     fecha_pedido: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     estado: Mapped[str] = mapped_column(String(50), default="pendiente")  # pendiente, pagado, entregado
     confirmacion_enviada: Mapped[bool] = mapped_column(default=False)
+    encuesta_enviada: Mapped[bool] = mapped_column(default=False)  # True si se envió encuesta post-venta
 
     def __repr__(self):
         return f"<Pedido {self.telefono} - {self.producto} - {self.estado}>"
+
+
+class Satisfaccion(Base):
+    """Modelo para almacenar respuestas de encuestas post-venta."""
+    __tablename__ = "satisfaccion"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telefono: Mapped[str] = mapped_column(String(50), index=True)
+    pedido_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    producto: Mapped[str] = mapped_column(String(200), nullable=True)
+    rating: Mapped[int] = mapped_column(Integer)  # 1-5 estrellas
+    comentario: Mapped[str] = mapped_column(Text, nullable=True)
+    fecha_respuesta: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    nps: Mapped[str] = mapped_column(String(20), nullable=True)  # "promotor", "neutral", "detractor"
+
+    def __repr__(self):
+        return f"<Satisfaccion {self.telefono} - {self.rating}⭐ - {self.fecha_respuesta}>"
 
 
 async def inicializar_db():
@@ -692,3 +710,91 @@ async def obtener_todos_los_leads() -> list[Lead]:
         query = select(Lead).order_by(desc(Lead.ultimo_mensaje))
         result = await session.execute(query)
         return result.scalars().all()
+
+
+# ════════════════════════════════════════════════════════════
+# ENCUESTAS POST-VENTA
+# ════════════════════════════════════════════════════════════
+
+async def obtener_pedidos_sin_encuesta() -> list[Pedido]:
+    """Obtiene pedidos pagados hace 2h que aún no recibieron encuesta."""
+    async with async_session() as session:
+        hace_2h = datetime.utcnow() - timedelta(hours=2)
+        hace_2_5h = datetime.utcnow() - timedelta(hours=2, minutes=30)
+
+        query = (
+            select(Pedido)
+            .where(Pedido.estado == "pagado")
+            .where(Pedido.encuesta_enviada == False)
+            .where(Pedido.fecha_pedido >= hace_2_5h)
+            .where(Pedido.fecha_pedido <= hace_2h)
+            .order_by(desc(Pedido.fecha_pedido))
+        )
+        result = await session.execute(query)
+        return result.scalars().all()
+
+
+async def marcar_encuesta_enviada(pedido_id: int):
+    """Marca que se envió encuesta al cliente."""
+    async with async_session() as session:
+        query = select(Pedido).where(Pedido.id == pedido_id)
+        result = await session.execute(query)
+        pedido = result.scalar_one_or_none()
+        if pedido:
+            pedido.encuesta_enviada = True
+            await session.commit()
+
+
+async def guardar_respuesta_encuesta(
+    telefono: str,
+    pedido_id: int,
+    producto: str,
+    rating: int,
+    comentario: str = ""
+):
+    """Guarda la respuesta de la encuesta de satisfacción."""
+    async with async_session() as session:
+        # Calcular NPS: 1-2=detractor, 3-4=neutral, 5=promotor
+        if rating <= 2:
+            nps = "detractor"
+        elif rating <= 4:
+            nps = "neutral"
+        else:
+            nps = "promotor"
+
+        satisfaccion = Satisfaccion(
+            telefono=telefono,
+            pedido_id=pedido_id,
+            producto=producto,
+            rating=rating,
+            comentario=comentario,
+            nps=nps
+        )
+        session.add(satisfaccion)
+        await session.commit()
+
+
+async def obtener_nps_score() -> dict:
+    """Calcula NPS score (promoters - detractors) / total * 100."""
+    async with async_session() as session:
+        query = select(Satisfaccion)
+        result = await session.execute(query)
+        todas = result.scalars().all()
+
+        if not todas:
+            return {"nps": 0, "promotores": 0, "neutrales": 0, "detractores": 0, "total": 0}
+
+        promotores = len([s for s in todas if s.nps == "promotor"])
+        detractores = len([s for s in todas if s.nps == "detractor"])
+        neutrales = len([s for s in todas if s.nps == "neutral"])
+        total = len(todas)
+
+        nps = round((promotores - detractores) / total * 100) if total > 0 else 0
+
+        return {
+            "nps": nps,
+            "promotores": promotores,
+            "neutrales": neutrales,
+            "detractores": detractores,
+            "total": total
+        }

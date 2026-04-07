@@ -21,6 +21,8 @@ from agent.memory import (
     marcar_seguimiento_3dias,
     obtener_carritos_pendientes,
     marcar_carrito_recordatorio_enviado,
+    obtener_pedidos_sin_encuesta,
+    marcar_encuesta_enviada,
 )
 from agent.providers import obtener_proveedor
 
@@ -130,6 +132,40 @@ async def job_promo_domingo():
         logger.error(f"Error en job_promo_domingo: {e}")
 
 
+async def job_encuesta_post_venta():
+    """Envía encuesta de satisfacción 2 horas después de la compra."""
+    try:
+        logger.info("📋 Ejecutando: Encuesta post-venta")
+        pedidos = await obtener_pedidos_sin_encuesta()
+
+        if not pedidos:
+            logger.debug("No hay pedidos pendientes de encuesta")
+            return
+
+        for pedido in pedidos:
+            mensaje = (
+                f"Hola! 👋\n\n"
+                f"¿Cómo te fue con tu {pedido.producto}?\n"
+                f"Nos encantaría saber tu opinión:\n\n"
+                f"⭐⭐⭐⭐⭐ (5 estrellas - Excelente)\n"
+                f"⭐⭐⭐⭐ (4 estrellas - Muy bien)\n"
+                f"⭐⭐⭐ (3 estrellas - Bien)\n"
+                f"⭐⭐ (2 estrellas - Podría mejorar)\n"
+                f"⭐ (1 estrella - No me gustó)\n\n"
+                f"Escribí el número de estrellas (1-5) y, si querés, contáme más."
+            )
+
+            exito = await proveedor.enviar_mensaje(pedido.telefono, mensaje)
+            if exito:
+                await marcar_encuesta_enviada(pedido.id)
+                logger.info(f"✓ Encuesta enviada a {pedido.telefono} (pedido #{pedido.id})")
+            else:
+                logger.error(f"✗ Fallo envío encuesta a {pedido.telefono}")
+
+    except Exception as e:
+        logger.error(f"Error en job_encuesta_post_venta: {e}")
+
+
 def inicializar_scheduler():
     """Inicializa el scheduler con las tareas automáticas."""
     try:
@@ -162,6 +198,16 @@ def inicializar_scheduler():
             replace_existing=True
         )
         logger.info("✓ Job 'Promos domingo' programado (domingo 4:00 PM)")
+
+        # Job 4: Encuesta post-venta - cada hora (busca pedidos de 2h atrás)
+        scheduler.add_job(
+            job_encuesta_post_venta,
+            CronTrigger(minute=15, timezone='America/Asuncion'),  # cada hora a las :15
+            id='encuesta_post_venta',
+            name='Encuesta post-venta',
+            replace_existing=True
+        )
+        logger.info("✓ Job 'Encuesta post-venta' programado (cada hora a :15)")
 
         # Iniciar el scheduler
         if not scheduler.running:
