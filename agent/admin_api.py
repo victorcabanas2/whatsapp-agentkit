@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, or_, ilike
 from agent.memory import async_session, Lead, Pedido, Mensaje
 
 logger = logging.getLogger("agentkit")
@@ -173,3 +173,144 @@ async def obtener_mensajes_sin_respuesta(horas=2, limite=10):
         # Retornar ordenados por más tiempo esperando
         leads_sin_respuesta.sort(key=lambda x: x["horas_sin_respuesta"], reverse=True)
         return leads_sin_respuesta[:limite]
+
+
+# ════════════════════════════════════════════════════════════
+# FUNCIONES PARA ENVÍO MASIVO Y CAMPAÑAS
+# ════════════════════════════════════════════════════════════
+
+async def enviar_broadcast(mensaje_texto: str, imagen_url: str = None, proveedor = None) -> dict:
+    """
+    Envía un mensaje masivo (broadcast) a todos los leads registrados.
+
+    Args:
+        mensaje_texto: Texto del mensaje
+        imagen_url: URL de imagen opcional (enviar imagen + texto)
+        proveedor: Proveedor de WhatsApp para enviar mensajes
+
+    Returns:
+        {"exitosos": int, "fallidos": int, "total": int}
+    """
+    async with async_session() as session:
+        # Obtener todos los leads
+        query = select(Lead)
+        result = await session.execute(query)
+        leads = result.scalars().all()
+
+        exitosos = 0
+        fallidos = 0
+
+        for lead in leads:
+            try:
+                if imagen_url:
+                    # Si hay imagen, enviar imagen + texto
+                    exito = await proveedor.enviar_imagen(lead.telefono, imagen_url, mensaje_texto)
+                else:
+                    # Solo texto
+                    exito = await proveedor.enviar_mensaje(lead.telefono, mensaje_texto)
+
+                if exito:
+                    exitosos += 1
+                else:
+                    fallidos += 1
+            except Exception as e:
+                logger.error(f"Error enviando broadcast a {lead.telefono}: {e}")
+                fallidos += 1
+
+        return {
+            "exitosos": exitosos,
+            "fallidos": fallidos,
+            "total": len(leads)
+        }
+
+
+async def obtener_clientes_importados(pagina: int = 1, por_pagina: int = 20) -> dict:
+    """
+    Obtiene clientes importados (es_cliente_previo=True) con paginación.
+
+    Args:
+        pagina: Número de página (1-based)
+        por_pagina: Cantidad de registros por página
+
+    Returns:
+        {
+            "clientes": [...],
+            "total": int,
+            "pagina": int,
+            "total_paginas": int
+        }
+    """
+    async with async_session() as session:
+        # Contar total de clientes importados
+        query_count = select(func.count(Lead.id)).where(Lead.es_cliente_previo == True)
+        result = await session.execute(query_count)
+        total = result.scalar() or 0
+
+        # Calcular paginación
+        total_paginas = (total + por_pagina - 1) // por_pagina
+        offset = (pagina - 1) * por_pagina
+
+        # Obtener clientes de esta página
+        query = (
+            select(Lead)
+            .where(Lead.es_cliente_previo == True)
+            .order_by(desc(Lead.ultimo_mensaje))
+            .offset(offset)
+            .limit(por_pagina)
+        )
+        result = await session.execute(query)
+        clientes = result.scalars().all()
+
+        return {
+            "clientes": [
+                {
+                    "telefono": c.telefono,
+                    "nombre": c.nombre or "Sin nombre",
+                    "productos_comprados": c.productos_comprados_previos or "—",
+                    "historial": c.historial_previo_resumen or "—",
+                    "fue_cliente": c.fue_cliente,
+                    "ultimo_mensaje": c.ultimo_mensaje.isoformat() if c.ultimo_mensaje else None,
+                }
+                for c in clientes
+            ],
+            "total": total,
+            "pagina": pagina,
+            "total_paginas": total_paginas
+        }
+
+
+async def buscar_clientes_importados(query_texto: str) -> list:
+    """
+    Busca clientes importados por nombre o teléfono.
+
+    Args:
+        query_texto: Texto a buscar (nombre o teléfono)
+
+    Returns:
+        Lista de clientes que coinciden
+    """
+    async with async_session() as session:
+        query = (
+            select(Lead)
+            .where(Lead.es_cliente_previo == True)
+            .where(
+                or_(
+                    Lead.telefono.ilike(f"%{query_texto}%"),
+                    Lead.nombre.ilike(f"%{query_texto}%")
+                )
+            )
+            .order_by(desc(Lead.ultimo_mensaje))
+        )
+        result = await session.execute(query)
+        clientes = result.scalars().all()
+
+        return [
+            {
+                "telefono": c.telefono,
+                "nombre": c.nombre or "Sin nombre",
+                "productos_comprados": c.productos_comprados_previos or "—",
+                "historial": c.historial_previo_resumen or "—",
+                "fue_cliente": c.fue_cliente,
+            }
+            for c in clientes
+        ]

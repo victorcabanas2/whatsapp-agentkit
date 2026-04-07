@@ -69,3 +69,17 @@ class ProveedorWhatsApp(ABC):
             Respuesta para validación, o None si no aplica
         """
         return None
+
+    async def enviar_imagen(self, telefono: str, imagen_url: str, caption: str = "") -> bool:
+        """
+        Envía una imagen. Por defecto, retorna False (debe implementarse en cada proveedor).
+
+        Args:
+            telefono: Número del destinatario
+            imagen_url: URL de la imagen
+            caption: Texto que acompaña la imagen
+
+        Returns:
+            True si el envío fue exitoso, False en caso contrario
+        """
+        return False

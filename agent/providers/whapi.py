@@ -179,15 +179,18 @@ class ProveedorWhapi(ProveedorWhatsApp):
 
         return mensajes
 
-    async def enviar_imagen(self, telefono: str, url_imagen: str) -> bool:
-        """Envía una imagen via Whapi.cloud."""
+    async def enviar_imagen(self, telefono: str, url_imagen: str, caption: str = "") -> bool:
+        """Envía una imagen via Whapi.cloud con caption opcional."""
         if not self.token:
             logger.warning("WHAPI_TOKEN no configurado — imagen no enviada")
             return False
 
         telefono_limpio = str(telefono).replace("+", "").replace(" ", "")
         headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
-        payload = {"to": telefono_limpio, "image": {"link": url_imagen}}
+        payload = {
+            "to": telefono_limpio,
+            "image": {"link": url_imagen, "caption": caption} if caption else {"link": url_imagen}
+        }
 
         try:
             async with httpx.AsyncClient() as client:
