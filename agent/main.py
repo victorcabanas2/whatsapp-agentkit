@@ -666,7 +666,7 @@ def get_login_html():
 
 def get_dashboard_html():
     """Página del dashboard completo con leads, pedidos, campañas y control de bot."""
-    return r"""<!DOCTYPE html>
+    return """<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -901,68 +901,37 @@ def get_dashboard_html():
                 const statsRes = await fetch('/api/admin/stats');
                 const stats = await statsRes.json();
 
-                document.getElementById('stats').innerHTML = \`
-                    <div class="stat-card"><div class="stat-number">\${stats.total_leads}</div><div class="stat-label">Total Leads</div></div>
-                    <div class="stat-card"><div class="stat-number">\${stats.leads_hoy}</div><div class="stat-label">Leads Hoy</div></div>
-                    <div class="stat-card hot"><div class="stat-number">\${stats.hot_leads}</div><div class="stat-label">🔥 Hot Leads</div></div>
-                    <div class="stat-card"><div class="stat-number">\${stats.conversion_pct}%</div><div class="stat-label">Conversión</div></div>
-                    <div class="stat-card pending"><div class="stat-number">\${stats.pedidos_pendientes}</div><div class="stat-label">Pedidos Pendientes</div></div>
-                    <div class="stat-card"><div class="stat-number">\${stats.sin_respuesta_2h}</div><div class="stat-label">Sin Respuesta >2h</div></div>
-                \`;
+                document.getElementById('stats').innerHTML =
+                    '<div class="stat-card"><div class="stat-number">' + stats.total_leads + '</div><div class="stat-label">Total Leads</div></div>' +
+                    '<div class="stat-card"><div class="stat-number">' + stats.leads_hoy + '</div><div class="stat-label">Leads Hoy</div></div>' +
+                    '<div class="stat-card hot"><div class="stat-number">' + stats.hot_leads + '</div><div class="stat-label">🔥 Hot Leads</div></div>' +
+                    '<div class="stat-card"><div class="stat-number">' + stats.conversion_pct + '%</div><div class="stat-label">Conversión</div></div>' +
+                    '<div class="stat-card pending"><div class="stat-number">' + stats.pedidos_pendientes + '</div><div class="stat-label">Pedidos Pendientes</div></div>' +
+                    '<div class="stat-card"><div class="stat-number">' + stats.sin_respuesta_2h + '</div><div class="stat-label">Sin Respuesta >2h</div></div>';
 
                 // Hot leads
                 const hotRes = await fetch('/api/admin/leads?estado=hot&limite=5');
                 const hotLeads = await hotRes.json();
                 document.querySelector('#hot-leads-table tbody').innerHTML = hotLeads.length > 0 ?
-                    hotLeads.map(l => \`<tr>
-                        <td><a onclick="copyPhone('\${l.telefono}')" title="Copiar">\${l.telefono}</a></td>
-                        <td>\${l.nombre}</td>
-                        <td>\${l.producto_preferido}</td>
-                        <td>\${l.score}</td>
-                        <td>\${getBadgeIntention(l.intencion)}</td>
-                        <td>\${new Date(l.ultimo_mensaje).toLocaleTimeString('es-PY')}</td>
-                        <td><a href="https://wa.me/\${l.telefono}" target="_blank">📱</a></td>
-                    </tr>\`).join('') : '<tr><td colspan="7">Sin leads hot</td></tr>';
+                    hotLeads.map(l => '<tr><td><a onclick="copyPhone(' + JSON.stringify(l.telefono) + ')" title="Copiar">' + l.telefono + '</a></td><td>' + l.nombre + '</td><td>' + l.producto_preferido + '</td><td>' + l.score + '</td><td>' + getBadgeIntention(l.intencion) + '</td><td>' + new Date(l.ultimo_mensaje).toLocaleTimeString('es-PY') + '</td><td><a href="https://wa.me/' + l.telefono + '" target="_blank">📱</a></td></tr>').join('') : '<tr><td colspan="7">Sin leads hot</td></tr>';
 
                 // All leads
                 const leadsRes = await fetch('/api/admin/leads');
                 const leads = await leadsRes.json();
                 document.querySelector('#leads-table tbody').innerHTML = leads.length > 0 ?
-                    leads.map(l => \`<tr>
-                        <td><a onclick="copyPhone('\${l.telefono}')">\${l.telefono}</a></td>
-                        <td>\${l.nombre}</td>
-                        <td>\${l.producto_preferido}</td>
-                        <td>\${l.score}</td>
-                        <td>\${getBadgeIntention(l.intencion)}</td>
-                        <td>\${new Date(l.ultimo_mensaje).toLocaleTimeString('es-PY')}</td>
-                        <td>\${l.fue_cliente ? '<span class="badge badge-success">✓ Cliente</span>' : '<span class="badge badge-pending">Lead</span>'}</td>
-                    </tr>\`).join('') : '<tr><td colspan="7">Sin leads</td></tr>';
+                    leads.map(l => '<tr><td><a onclick="copyPhone(' + JSON.stringify(l.telefono) + ')">' + l.telefono + '</a></td><td>' + l.nombre + '</td><td>' + l.producto_preferido + '</td><td>' + l.score + '</td><td>' + getBadgeIntention(l.intencion) + '</td><td>' + new Date(l.ultimo_mensaje).toLocaleTimeString('es-PY') + '</td><td>' + (l.fue_cliente ? '<span class="badge badge-success">✓ Cliente</span>' : '<span class="badge badge-pending">Lead</span>') + '</td></tr>').join('') : '<tr><td colspan="7">Sin leads</td></tr>';
 
                 // Sin respuesta
                 const sinRespRes = await fetch('/api/admin/sin-respuesta?horas=2');
                 const sinResp = await sinRespRes.json();
                 document.querySelector('#sin-respuesta-table tbody').innerHTML = sinResp.length > 0 ?
-                    sinResp.map(l => \`<tr>
-                        <td><a onclick="copyPhone('\${l.telefono}')">\${l.telefono}</a></td>
-                        <td>\${l.nombre}</td>
-                        <td>\${l.horas_sin_respuesta}h</td>
-                        <td>\${l.score}</td>
-                        <td>\${l.ultimo_mensaje}</td>
-                        <td><a href="https://wa.me/\${l.telefono}" target="_blank">📱 Escribir</a></td>
-                    </tr>\`).join('') : '<tr><td colspan="6">Todos respondidos</td></tr>';
+                    sinResp.map(l => '<tr><td><a onclick="copyPhone(' + JSON.stringify(l.telefono) + ')">' + l.telefono + '</a></td><td>' + l.nombre + '</td><td>' + l.horas_sin_respuesta + 'h</td><td>' + l.score + '</td><td>' + l.ultimo_mensaje + '</td><td><a href="https://wa.me/' + l.telefono + '" target="_blank">📱 Escribir</a></td></tr>').join('') : '<tr><td colspan="6">Todos respondidos</td></tr>';
 
                 // Pedidos
                 const pedidosRes = await fetch('/api/admin/pedidos');
                 const pedidos = await pedidosRes.json();
                 document.querySelector('#pedidos-table tbody').innerHTML = pedidos.length > 0 ?
-                    pedidos.map(p => \`<tr>
-                        <td><a onclick="copyPhone('\${p.telefono}')">\${p.telefono}</a></td>
-                        <td>\${p.producto}</td>
-                        <td>\${p.precio}</td>
-                        <td>\${p.metodo_pago}</td>
-                        <td>\${p.estado === 'pagado' ? '<span class="badge badge-success">✓ Pagado</span>' : '<span class="badge badge-danger">⏳ Pendiente</span>'}</td>
-                        <td>\${new Date(p.fecha_pedido).toLocaleString('es-PY')}</td>
-                    </tr>\`).join('') : '<tr><td colspan="6">Sin pedidos</td></tr>';
+                    pedidos.map(p => '<tr><td><a onclick="copyPhone(' + JSON.stringify(p.telefono) + ')">' + p.telefono + '</a></td><td>' + p.producto + '</td><td>' + p.precio + '</td><td>' + p.metodo_pago + '</td><td>' + (p.estado === 'pagado' ? '<span class="badge badge-success">✓ Pagado</span>' : '<span class="badge badge-danger">⏳ Pendiente</span>') + '</td><td>' + new Date(p.fecha_pedido).toLocaleString('es-PY') + '</td></tr>').join('') : '<tr><td colspan="6">Sin pedidos</td></tr>';
 
             } catch (e) {
                 console.error('Error:', e);
@@ -980,7 +949,7 @@ def get_dashboard_html():
             document.getElementById('broadcast-resultado').innerText = 'Enviando...';
             const res = await fetch('/api/admin/enviar-masivo?mensaje=' + encodeURIComponent(texto), {method: 'POST'});
             const data = await res.json();
-            document.getElementById('broadcast-resultado').innerText = \`✓ Enviados: \${data.exitosos} | ✗ Fallidos: \${data.fallidos}\`;
+            document.getElementById('broadcast-resultado').innerText = '✓ Enviados: ' + data.exitosos + ' | ✗ Fallidos: ' + data.fallidos;
         }
 
         function limpiarBroadcast() {
@@ -1037,21 +1006,15 @@ def get_dashboard_html():
 
             const tbody = document.querySelector('#clientes-importados-table tbody');
             tbody.innerHTML = data.clientes && data.clientes.length > 0 ?
-                data.clientes.map(c => \`<tr>
-                    <td><a onclick="copyPhone('\${c.telefono}')" title="Copiar">\${c.telefono}</a></td>
-                    <td>\${c.nombre}</td>
-                    <td>\${c.productos_comprados}</td>
-                    <td>\${c.historial}</td>
-                    <td><a href="https://wa.me/\${c.telefono}" target="_blank">📱</a></td>
-                </tr>\`).join('') : '<tr><td colspan="5">Sin clientes importados</td></tr>';
+                data.clientes.map(c => '<tr><td><a onclick="copyPhone(' + JSON.stringify(c.telefono) + ')" title="Copiar">' + c.telefono + '</a></td><td>' + c.nombre + '</td><td>' + c.productos_comprados + '</td><td>' + c.historial + '</td><td><a href="https://wa.me/' + c.telefono + '" target="_blank">📱</a></td></tr>').join('') : '<tr><td colspan="5">Sin clientes importados</td></tr>';
 
             // Paginación
             let html = '';
             for (let i = 1; i <= data.total_paginas; i++) {
                 if (i === pagina) {
-                    html += \`<span class="active">\${i}</span>\`;
+                    html += '<span class="active">' + i + '</span>';
                 } else {
-                    html += \`<a onclick="cargarClientesImportados(\${i})">\${i}</a>\`;
+                    html += '<a onclick="cargarClientesImportados(' + i + ')">' + i + '</a>';
                 }
             }
             document.getElementById('paginacion-importados').innerHTML = html;
@@ -1069,13 +1032,7 @@ def get_dashboard_html():
 
             const tbody = document.querySelector('#clientes-importados-table tbody');
             tbody.innerHTML = data.clientes && data.clientes.length > 0 ?
-                data.clientes.map(c => \`<tr>
-                    <td><a onclick="copyPhone('\${c.telefono}')">\${c.telefono}</a></td>
-                    <td>\${c.nombre}</td>
-                    <td>\${c.productos_comprados}</td>
-                    <td>\${c.historial}</td>
-                    <td><a href="https://wa.me/\${c.telefono}" target="_blank">📱</a></td>
-                </tr>\`).join('') : '<tr><td colspan="5">No encontrado</td></tr>';
+                data.clientes.map(c => '<tr><td><a onclick="copyPhone(' + JSON.stringify(c.telefono) + ')">' + c.telefono + '</a></td><td>' + c.nombre + '</td><td>' + c.productos_comprados + '</td><td>' + c.historial + '</td><td><a href="https://wa.me/' + c.telefono + '" target="_blank">📱</a></td></tr>').join('') : '<tr><td colspan="5">No encontrado</td></tr>';
 
             document.getElementById('paginacion-importados').innerHTML = '';
         }
@@ -1090,7 +1047,7 @@ def get_dashboard_html():
             if (data.error) {
                 document.getElementById('import-resultado').innerText = '✗ Error: ' + data.error;
             } else {
-                document.getElementById('import-resultado').innerText = \`✓ Importados: \${data.exitosos} | Duplicados: \${data.duplicados} | Errores: \${data.errores}\`;
+                document.getElementById('import-resultado').innerText = '✓ Importados: ' + data.exitosos + ' | Duplicados: ' + data.duplicados + ' | Errores: ' + data.errores;
                 cargarClientesImportados(1);
             }
         }
