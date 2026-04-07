@@ -1289,6 +1289,24 @@ async def admin_sin_respuesta(horas: int = 2):
         return []
 
 
+@app.get("/api/admin/chat-status")
+async def get_chat_status(telefono: str):
+    """Retorna si un chat está bajo control de admin o bot."""
+    estado = "admin" if telefono in MUTED_CHATS else "bot"
+    return {"telefono": telefono, "control": estado, "muted": telefono in MUTED_CHATS}
+
+
+@app.post("/api/admin/toggle-control")
+async def toggle_control(telefono: str):
+    """Toggle: silencia/reactiva un chat."""
+    if telefono in MUTED_CHATS:
+        MUTED_CHATS.discard(telefono)
+        return {"telefono": telefono, "control": "bot", "action": "reactivado"}
+    else:
+        MUTED_CHATS.add(telefono)
+        return {"telefono": telefono, "control": "admin", "action": "silenciado"}
+
+
 @app.post("/api/admin/enviar-masivo")
 async def admin_enviar_masivo(request: Request):
     """
