@@ -791,10 +791,14 @@ def get_dashboard_html():
             <h2>📢 Envío Masivo de Mensajes</h2>
 
             <div style="background: #1e293b; padding: 20px; border-radius: 8px;">
-                <h3>Enviar Texto Masivo</h3>
+                <h3>Enviar Texto Masivo (+ Imagen Opcional)</h3>
                 <div class="form-group">
                     <label>Mensaje de texto:</label>
                     <textarea id="broadcast-texto" placeholder="Escribe el mensaje que quieres enviar a todos los clientes..." style="height: 100px;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Imagen (opcional):</label>
+                    <input type="file" id="broadcast-imagen" accept="image/*">
                 </div>
                 <button onclick="enviarBroadcast()" style="background: #10b981;">📤 Enviar a Todos</button>
                 <button onclick="limpiarBroadcast()">🗑️ Limpiar</button>
@@ -808,8 +812,8 @@ def get_dashboard_html():
                     <input type="text" id="imagen-telefono" placeholder="595991234567">
                 </div>
                 <div class="form-group">
-                    <label>URL de la imagen:</label>
-                    <input type="text" id="imagen-url" placeholder="https://ejemplo.com/imagen.jpg">
+                    <label>Imagen:</label>
+                    <input type="file" id="imagen-archivo" accept="image/*">
                 </div>
                 <div class="form-group">
                     <label>Texto (opcional):</label>
@@ -941,34 +945,51 @@ def get_dashboard_html():
         // FUNCIONES DE CAMPAÑAS
         async function enviarBroadcast() {
             const texto = document.getElementById('broadcast-texto').value;
-            if (!texto) {
-                alert('Escribe un mensaje');
+            const archivoInput = document.getElementById('broadcast-imagen');
+            if (!texto && (!archivoInput.files || archivoInput.files.length === 0)) {
+                alert('Escribe un mensaje o carga una imagen');
                 return;
             }
 
             document.getElementById('broadcast-resultado').innerText = 'Enviando...';
-            const res = await fetch('/api/admin/enviar-masivo?mensaje=' + encodeURIComponent(texto), {method: 'POST'});
+            const formData = new FormData();
+            formData.append('mensaje', texto);
+            if (archivoInput.files && archivoInput.files.length > 0) {
+                formData.append('imagen', archivoInput.files[0]);
+            }
+
+            const res = await fetch('/api/admin/enviar-masivo', {method: 'POST', body: formData});
             const data = await res.json();
             document.getElementById('broadcast-resultado').innerText = '✓ Enviados: ' + data.exitosos + ' | ✗ Fallidos: ' + data.fallidos;
         }
 
         function limpiarBroadcast() {
             document.getElementById('broadcast-texto').value = '';
+            document.getElementById('broadcast-imagen').value = '';
             document.getElementById('broadcast-resultado').innerText = '';
         }
 
         async function enviarImagen() {
             const tel = document.getElementById('imagen-telefono').value;
-            const url = document.getElementById('imagen-url').value;
+            const archivoInput = document.getElementById('imagen-archivo');
             const caption = document.getElementById('imagen-caption').value;
 
-            if (!tel || !url) {
-                alert('Teléfono e imagen son requeridos');
+            if (!tel) {
+                alert('Teléfono requerido');
+                return;
+            }
+            if (!archivoInput.files || archivoInput.files.length === 0) {
+                alert('Carga una imagen');
                 return;
             }
 
             document.getElementById('imagen-resultado').innerText = 'Enviando...';
-            const res = await fetch('/api/admin/enviar-imagen?telefono=' + tel + '&imagen_url=' + encodeURIComponent(url) + '&caption=' + encodeURIComponent(caption), {method: 'POST'});
+            const formData = new FormData();
+            formData.append('telefono', tel);
+            formData.append('imagen', archivoInput.files[0]);
+            formData.append('caption', caption);
+
+            const res = await fetch('/api/admin/enviar-imagen', {method: 'POST', body: formData});
             const data = await res.json();
             document.getElementById('imagen-resultado').innerText = data.exito ? '✓ ' + data.mensaje : '✗ ' + data.mensaje;
         }
@@ -1116,24 +1137,28 @@ async def admin_sin_respuesta(horas: int = 2):
 
 
 @app.post("/api/admin/enviar-masivo")
-async def admin_enviar_masivo(mensaje: str = "", imagen_url: str = ""):
+async def admin_enviar_masivo(request: Request):
     """
     Envía un mensaje masivo (broadcast) a todos los leads.
-
-    Args:
-        mensaje: Texto del mensaje
-        imagen_url: URL de imagen opcional
+    Acepta: mensaje (texto) e imagen (archivo, opcional)
 
     Returns:
         {"exitosos": int, "fallidos": int, "total": int}
     """
     try:
         from agent.admin_api import enviar_broadcast
+        import base64
 
-        if not mensaje and not imagen_url:
-            return {"error": "Debe proporcionar al menos un mensaje o imagen"}
+        form = await request.form()
+        mensaje = form.get('mensaje', '')
+        imagen_file = form.get('imagen')
 
-        resultado = await enviar_broadcast(mensaje, imagen_url, proveedor)
+        imagen_base64 = None
+        if imagen_file:
+            imagen_bytes = await imagen_file.read()
+            imagen_base64 = base64.b64encode(imagen_bytes).decode()
+
+        resultado = await enviar_broadcast(mensaje, imagen_base64, proveedor)
         return resultado
     except Exception as e:
         logger.error(f"Error en enviar_masivo: {e}", exc_info=True)
@@ -1141,29 +1166,34 @@ async def admin_enviar_masivo(mensaje: str = "", imagen_url: str = ""):
 
 
 @app.post("/api/admin/enviar-imagen")
-async def admin_enviar_imagen(telefono: str = "", imagen_url: str = "", caption: str = ""):
+async def admin_enviar_imagen(request: Request):
     """
     Envía una imagen a un cliente específico.
-
-    Args:
-        telefono: Número del cliente
-        imagen_url: URL de la imagen
-        caption: Texto que acompaña la imagen
+    Acepta: telefono, imagen (archivo), caption (texto, opcional)
 
     Returns:
         {"exito": bool, "mensaje": str}
     """
-    if not telefono or not imagen_url:
-        return {"exito": False, "mensaje": "Teléfono e imagen_url son requeridos"}
-
     try:
-        exito = await proveedor.enviar_imagen(telefono, imagen_url, caption)
+        import base64
+        form = await request.form()
+        telefono = form.get('telefono', '')
+        imagen_file = form.get('imagen')
+        caption = form.get('caption', '')
+
+        if not telefono or not imagen_file:
+            return {"exito": False, "mensaje": "Teléfono e imagen son requeridos"}
+
+        imagen_bytes = await imagen_file.read()
+        imagen_base64 = base64.b64encode(imagen_bytes).decode()
+
+        exito = await proveedor.enviar_imagen(telefono, imagen_base64, caption)
         return {
             "exito": exito,
             "mensaje": "Imagen enviada" if exito else "Error al enviar imagen"
         }
     except Exception as e:
-        logger.error(f"Error al enviar imagen a {telefono}: {e}")
+        logger.error(f"Error al enviar imagen: {e}", exc_info=True)
         return {"exito": False, "mensaje": str(e)}
 
 

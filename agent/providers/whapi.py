@@ -179,18 +179,28 @@ class ProveedorWhapi(ProveedorWhatsApp):
 
         return mensajes
 
-    async def enviar_imagen(self, telefono: str, url_imagen: str, caption: str = "") -> bool:
-        """Envía una imagen via Whapi.cloud con caption opcional."""
+    async def enviar_imagen(self, telefono: str, imagen_data: str, caption: str = "") -> bool:
+        """Envía una imagen via Whapi.cloud. Acepta URL o base64."""
         if not self.token:
             logger.warning("WHAPI_TOKEN no configurado — imagen no enviada")
             return False
 
         telefono_limpio = str(telefono).replace("+", "").replace(" ", "")
         headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
-        payload = {
-            "to": telefono_limpio,
-            "image": {"link": url_imagen, "caption": caption} if caption else {"link": url_imagen}
-        }
+
+        # Detectar si es base64 (comienza con datos:) o URL
+        if imagen_data.startswith("data:") or not imagen_data.startswith("http"):
+            # Es base64
+            payload = {
+                "to": telefono_limpio,
+                "image": {"base64": imagen_data, "caption": caption} if caption else {"base64": imagen_data}
+            }
+        else:
+            # Es URL
+            payload = {
+                "to": telefono_limpio,
+                "image": {"link": imagen_data, "caption": caption} if caption else {"link": imagen_data}
+            }
 
         try:
             async with httpx.AsyncClient() as client:
