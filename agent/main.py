@@ -20,21 +20,38 @@ from sqlalchemy import select, desc, func
 
 from agent.brain import generar_respuesta, detectar_confirmacion_pago
 from agent.memory import (
+    # Funciones core
     inicializar_db,
     guardar_mensaje,
     obtener_historial,
     registrar_lead,
     guardar_pedido,
+    guardar_pedido_atomico,
     obtener_ultimo_pedido,
     actualizar_estado_pedido,
     actualizar_lead_scoring,
     obtener_lead,
     marcar_alerta_vendedor,
     obtener_resumen_cliente,
+    # Integridad
+    validar_integridad_referencial,
+    # Auditoría y errores
+    registrar_auditoria,
+    obtener_errores_recientes,
+    obtener_historial_auditoria_tabla,
+    obtener_estadisticas_auditoria,
+    # Excepciones custom
+    AgentKitError,
+    IntegrityViolationError,
+    ValidationError,
+    AtomicityError,
+    DataConsistencyError,
+    # Modelos
     async_session,
     Lead,
     Pedido,
     Mensaje,
+    Auditoria,
 )
 from agent.providers import obtener_proveedor
 from agent.scheduler import inicializar_scheduler, detener_scheduler
@@ -495,7 +512,8 @@ async def crear_pedido(request: Request):
     try:
         data = await request.json()
 
-        pedido = await guardar_pedido(
+        # ✅ USAR GUARDAR ATÓMICO: actualiza lead + pedido en UNA transacción
+        pedido = await guardar_pedido_atomico(
             telefono=data.get("telefono"),
             producto=data.get("producto"),
             precio=data.get("precio"),
@@ -508,7 +526,7 @@ async def crear_pedido(request: Request):
             razon_social=data.get("razon_social", ""),
         )
 
-        logger.info(f"💾 Pedido guardado: {pedido}")
+        logger.info(f"✅ Pedido guardado (atómico): {pedido}")
 
         return {
             "status": "ok",
@@ -516,9 +534,33 @@ async def crear_pedido(request: Request):
             "mensaje": f"Pedido #{pedido.id} guardado correctamente"
         }
 
-    except Exception as e:
-        logger.error(f"Error creando pedido: {e}")
+    except ValidationError as e:
+        logger.warning(f"⚠️ Validación rechazada: {e}")
+        raise HTTPException(status_code=422, detail=f"Validación fallida: {str(e)}")
+
+    except IntegrityViolationError as e:
+        logger.error(f"❌ Violación de integridad: {e}")
+        raise HTTPException(status_code=409, detail=f"Integridad comprometida: {str(e)}")
+
+    except AtomicityError as e:
+        logger.error(f"❌ Error de atomicidad (ROLLBACK): {e}")
+        raise HTTPException(status_code=500, detail=f"Transacción fallida: {str(e)}")
+
+    except AgentKitError as e:
+        logger.error(f"❌ Error de AgentKit: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+
+    except Exception as e:
+        logger.critical(f"❌ Error inesperado creando pedido: {e}")
+        # Registrar en auditoría el error inesperado
+        await registrar_auditoria(
+            tabla="pedidos",
+            operacion="INSERT",
+            usuario="api",
+            error=True,
+            mensaje_error=f"Error inesperado: {str(e)}"
+        )
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @app.get("/pedidos/{telefono}")
@@ -845,15 +887,44 @@ def get_dashboard_html():
 
         <!-- TAB 4: CLIENTES IMPORTADOS -->
         <div id="tab-importados" class="tab-content">
-            <h2>📥 Clientes Importados del Excel</h2>
+            <h2>📥 Clientes Importados</h2>
 
-            <div style="background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <!-- IMPORT FROM EXCEL -->
+            <div style="background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #10b981;">
+                <h3 style="margin-bottom: 15px;">📊 Desde Excel</h3>
                 <div class="form-group">
                     <label>Archivo Excel (.xlsx):</label>
                     <input type="file" id="excel-archivo" accept=".xlsx">
                 </div>
                 <button onclick="importarExcel()" style="background: #10b981; margin-right: 10px;">📥 Importar desde Excel</button>
                 <div id="import-resultado" style="margin-top: 10px;"></div>
+            </div>
+
+            <!-- IMPORT FROM META -->
+            <div style="background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #8b5cf6;">
+                <h3 style="margin-bottom: 15px;">💬 Desde Meta/Facebook</h3>
+                <details style="margin-bottom: 15px; cursor: pointer;">
+                    <summary style="color: #94a3b8; font-size: 12px; font-weight: 500;">ℹ️ ¿Cómo obtener los datos de Meta?</summary>
+                    <div style="margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 4px; font-size: 12px; color: #cbd5e1;">
+                        <p><strong>Paso 1:</strong> En Meta/Facebook, copia tus conversaciones de WhatsApp</p>
+                        <p><strong>Paso 2:</strong> El formato debe ser tab-separado con columnas:</p>
+                        <code style="display: block; background: #1e293b; padding: 8px; margin: 8px 0; border-left: 2px solid #8b5cf6;">
+contact_info    message_content    message_timestamp    profile_image
+                        </code>
+                        <p><strong>Paso 3:</strong> Cada fila debe tener: nombre (y opcionalmente teléfono), mensaje, hora</p>
+                        <p style="color: #7c3aed; margin-top: 8px;">💡 El parser extraerá automáticamente teléfonos, nombres y productos mencionados</p>
+                    </div>
+                </details>
+                <div class="form-group">
+                    <label>Datos Meta (tab-separados o archivo .txt):</label>
+                    <textarea id="meta-datos" placeholder="Pega aquí los datos exportados de Meta, o carga un archivo .txt" style="width: 100%; height: 120px; padding: 10px; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 4px; font-family: monospace; font-size: 12px;"></textarea>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <button onclick="importarMeta()" style="background: #8b5cf6; margin-right: 10px;">💬 Importar desde Meta</button>
+                    <button onclick="document.getElementById('meta-archivo').click()" style="background: #6366f1; margin-right: 10px;">📁 Cargar archivo .txt</button>
+                    <input type="file" id="meta-archivo" accept=".txt" style="display: none;" onchange="leerArchivoMeta()">
+                </div>
+                <div id="meta-resultado" style="margin-top: 10px;"></div>
             </div>
 
             <div class="search-box">
@@ -1081,6 +1152,42 @@ def get_dashboard_html():
                 document.getElementById('import-resultado').innerText = '✗ Error: ' + data.error;
             } else {
                 document.getElementById('import-resultado').innerText = '✓ Importados: ' + data.exitosos + ' | Duplicados: ' + data.duplicados + ' | Errores: ' + data.errores;
+                cargarClientesImportados(1);
+            }
+        }
+
+        function leerArchivoMeta() {
+            const archivoInput = document.getElementById('meta-archivo');
+            if (!archivoInput.files || archivoInput.files.length === 0) return;
+
+            const file = archivoInput.files[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById('meta-datos').value = e.target.result;
+            };
+            reader.readAsText(file);
+        }
+
+        async function importarMeta() {
+            const datosText = document.getElementById('meta-datos').value.trim();
+            if (!datosText) {
+                alert('Ingresa datos de Meta o carga un archivo');
+                return;
+            }
+            if (!confirm('¿Importar clientes desde Meta?')) return;
+
+            document.getElementById('meta-resultado').innerText = 'Importando...';
+            const formData = new FormData();
+            formData.append('datos', datosText);
+
+            const res = await fetch('/api/admin/importar-meta', {method: 'POST', body: formData});
+            const data = await res.json();
+
+            if (data.error) {
+                document.getElementById('meta-resultado').innerText = '✗ Error: ' + data.error;
+            } else {
+                document.getElementById('meta-resultado').innerText = '✓ Importados: ' + data.exitosos + ' | Duplicados: ' + data.duplicados + ' | Errores: ' + data.errores;
+                document.getElementById('meta-datos').value = '';
                 cargarClientesImportados(1);
             }
         }
@@ -1321,3 +1428,255 @@ async def admin_importar_excel(request: Request):
     except Exception as e:
         logger.error(f"Error importando Excel: {e}", exc_info=True)
         return {"error": str(e), "exitosos": 0, "errores": 0, "duplicados": 0}
+
+
+@app.post("/api/admin/importar-meta")
+async def admin_importar_meta(request: Request):
+    """
+    Importa clientes desde exportación de Meta/Facebook.
+    Acepta datos tab-separados en formato texto.
+
+    Body (form-data):
+        datos: texto con formato tab-separado
+               o archivo .txt con la exportación
+
+    Returns:
+        {"exitosos": int, "errores": int, "duplicados": int, ...}
+    """
+    try:
+        from agent.meta_parser import importar_desde_meta
+
+        form = await request.form()
+
+        # Aceptar datos como texto directo O como archivo
+        datos_texto = form.get('datos', '')
+        archivo = form.get('archivo')
+
+        if isinstance(datos_texto, str):
+            datos_texto = datos_texto.strip()
+
+        # Si hay archivo, leer su contenido
+        if archivo:
+            contenido_archivo = await archivo.read()
+            datos_texto = contenido_archivo.decode('utf-8').strip()
+
+        if not datos_texto:
+            return {
+                "error": "Datos requeridos — ingresa datos tab-separados o carga un archivo",
+                "exitosos": 0,
+                "errores": 0,
+                "duplicados": 0,
+                "total": 0
+            }
+
+        # Procesar importación
+        resultado = await importar_desde_meta(datos_texto)
+        logger.info(f"Meta import result: {resultado}")
+        return resultado
+
+    except Exception as e:
+        logger.error(f"Error importando datos Meta: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "exitosos": 0,
+            "errores": 0,
+            "duplicados": 0,
+            "total": 0
+        }
+
+
+@app.get("/api/admin/integridad")
+async def admin_validar_integridad():
+    """
+    ✅ Valida la integridad referencial de la base de datos.
+
+    Detecta:
+    - Mensajes sin lead correspondiente
+    - Pedidos sin lead
+    - Satisfacciones sin pedido
+    - Datos huérfanos
+
+    Returns:
+        {"valido": bool, "errores": [...], "timestamp": datetime}
+    """
+    try:
+        resultado = await validar_integridad_referencial()
+        status_code = 200 if resultado["valido"] else 206  # 206 Partial Content
+
+        if resultado["valido"]:
+            logger.info("✅ Validación de integridad: OK")
+        else:
+            logger.warning(f"⚠️ Problemas de integridad detectados: {resultado['errores']}")
+
+        return resultado
+
+    except Exception as e:
+        logger.error(f"Error validando integridad: {e}", exc_info=True)
+        return {
+            "valido": False,
+            "errores": [f"Error al validar: {str(e)}"],
+            "timestamp": datetime.utcnow()
+        }
+
+
+@app.post("/api/admin/reparar-integridad")
+async def admin_reparar_integridad():
+    """
+    ⚠️ EXPERIMENTAL: Intenta reparar problemas de integridad referencial.
+
+    ADVERTENCIA: Esta operación puede modificar datos.
+    Solo usar si se detectaron problemas de integridad.
+
+    Returns:
+        {"status": str, "accionesRealizadas": int, "errores": [...]}
+    """
+    try:
+        # Validar primero
+        estado_actual = await validar_integridad_referencial()
+        if estado_actual["valido"]:
+            return {
+                "status": "ok",
+                "accionesRealizadas": 0,
+                "mensaje": "✅ Base de datos en estado íntegro, no hay nada que reparar"
+            }
+
+        # Si hay problemas, loguear para revisión manual
+        logger.critical(f"⚠️ Reparación de integridad iniciada. Problemas: {estado_actual['errores']}")
+
+        # Por ahora, solo reportar. La reparación manual es más segura.
+        return {
+            "status": "warning",
+            "accionesRealizadas": 0,
+            "errores": estado_actual["errores"],
+            "mensaje": "Se detectaron problemas. Contacta al administrador para reparación manual."
+        }
+
+    except Exception as e:
+        logger.error(f"Error reparando integridad: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "accionesRealizadas": 0,
+            "errores": [str(e)]
+        }
+
+
+@app.get("/api/admin/errores")
+async def admin_errores(horas: int = 24, limite: int = 50):
+    """
+    ✅ ANTI-ERROR-SILENCIOSO: Ver todos los errores de las últimas X horas.
+
+    Args:
+        horas: Cuántas horas atrás buscar (default: 24)
+        limite: Máximo de registros (default: 50)
+
+    Returns:
+        Lista de errores registrados en auditoría
+    """
+    try:
+        errores = await obtener_errores_recientes(horas=horas, limite=limite)
+
+        return {
+            "status": "ok",
+            "total_errores": len(errores),
+            "horas": horas,
+            "errores": [
+                {
+                    "id": e.id,
+                    "tabla": e.tabla,
+                    "operacion": e.operacion,
+                    "mensaje": e.mensaje_error[:200] if e.mensaje_error else "",
+                    "timestamp": str(e.timestamp),
+                    "usuario": e.usuario
+                }
+                for e in errores
+            ]
+        }
+
+    except Exception as e:
+        logger.error(f"Error obteniendo errores: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "total_errores": 0,
+            "errores": [],
+            "error_message": str(e)
+        }
+
+
+@app.get("/api/admin/auditoria/{tabla}")
+async def admin_auditoria_tabla(tabla: str, horas: int = 24, limite: int = 100):
+    """
+    ✅ ANTI-ERROR-SILENCIOSO: Ver historial de cambios de una tabla.
+
+    Args:
+        tabla: Nombre de la tabla (leads, pedidos, mensajes, etc)
+        horas: Cuántas horas atrás (default: 24)
+        limite: Máximo de registros (default: 100)
+
+    Returns:
+        Historial de cambios auditados
+    """
+    try:
+        registros = await obtener_historial_auditoria_tabla(tabla=tabla, horas=horas, limite=limite)
+
+        return {
+            "status": "ok",
+            "tabla": tabla,
+            "total_cambios": len(registros),
+            "horas": horas,
+            "cambios": [
+                {
+                    "id": r.id,
+                    "operacion": r.operacion,
+                    "registro_id": r.registro_id,
+                    "usuario": r.usuario,
+                    "razon": r.razon,
+                    "error": r.error,
+                    "timestamp": str(r.timestamp),
+                    "datos_anteriores": r.datos_anteriores[:100] if r.datos_anteriores else None,
+                    "datos_nuevos": r.datos_nuevos[:100] if r.datos_nuevos else None
+                }
+                for r in registros
+            ]
+        }
+
+    except Exception as e:
+        logger.error(f"Error obteniendo auditoría de {tabla}: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "tabla": tabla,
+            "total_cambios": 0,
+            "cambios": [],
+            "error_message": str(e)
+        }
+
+
+@app.get("/api/admin/estadisticas-auditoria")
+async def admin_estadisticas_auditoria():
+    """
+    ✅ ANTI-ERROR-SILENCIOSO: Estadísticas generales de auditoría.
+
+    Retorna:
+    - Total de operaciones registradas
+    - Total de errores detectados
+    - Tasa de error (%)
+    - Breakdown por tabla y operación
+
+    Returns:
+        {"total_operaciones": int, "total_errores": int, "tasa_error": float, ...}
+    """
+    try:
+        stats = await obtener_estadisticas_auditoria()
+
+        return {
+            "status": "ok",
+            "estadisticas": stats,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas de auditoría: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "estadisticas": {},
+            "error_message": str(e)
+        }
