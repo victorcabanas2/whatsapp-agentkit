@@ -80,6 +80,10 @@ IMAGEN_DATOS_BANCARIOS = "https://i.imgur.com/WYPWrdl.png"
 # Número del vendedor para alertas (desde .env)
 VENDEDOR_WHATSAPP = os.getenv("VENDEDOR_WHATSAPP", "")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+ADMIN_WHATSAPP = os.getenv("ADMIN_WHATSAPP", "+595986147509")
+
+# Chats silenciados (admin tomó control)
+MUTED_CHATS = set()  # {telefono1, telefono2, ...}
 
 
 # ════════════════════════════════════════════════════════════
@@ -369,6 +373,36 @@ async def webhook_handler(request: Request):
                     logger.info(f"📢 Mensaje desde anuncio con payload: {msg.payload}")
                     # Prepender el payload al mensaje para que Claude lo entienda
                     mensaje_contextualizado = f"[Vino desde anuncio de: {msg.payload}] {msg.texto}"
+
+                # ═══════════════════════════════════════════════════════════
+                # COMANDOS ADMIN (solo desde ADMIN_WHATSAPP)
+                # ═══════════════════════════════════════════════════════════
+
+                if msg.telefono == ADMIN_WHATSAPP:
+                    if msg.texto.startswith("/takeover"):
+                        # /takeover TELEFONO → silenciar ese chat
+                        parts = msg.texto.split()
+                        if len(parts) > 1:
+                            target = parts[1]
+                            MUTED_CHATS.add(target)
+                            await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} silenciado. Bot no responderá.")
+                            logger.info(f"🔇 Admin silencia chat {target}")
+                        return {"status": "ok"}
+
+                    if msg.texto.startswith("/release"):
+                        # /release TELEFONO → reactivar ese chat
+                        parts = msg.texto.split()
+                        if len(parts) > 1:
+                            target = parts[1]
+                            MUTED_CHATS.discard(target)
+                            await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} activado. Bot responderá nuevamente.")
+                            logger.info(f"🔊 Admin reactiva chat {target}")
+                        return {"status": "ok"}
+
+                # VALIDAR si chat está silenciado
+                if msg.telefono in MUTED_CHATS:
+                    logger.info(f"🔇 Chat {msg.telefono} está silenciado. No responder.")
+                    return {"status": "ok"}
 
                 # Generar respuesta con Claude
                 logger.debug("Llamando a Claude AI...")
