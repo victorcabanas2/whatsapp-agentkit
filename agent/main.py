@@ -840,9 +840,9 @@ def get_dashboard_html():
             <h2>👥 Todos los Leads</h2>
             <table id="leads-table">
                 <thead><tr>
-                    <th>Teléfono</th><th>Nombre</th><th>Producto</th><th>Score</th><th>Intención</th><th>Último Msg</th><th>Estado</th>
+                    <th>Teléfono</th><th>Nombre</th><th>Producto</th><th>Score</th><th>Intención</th><th>Último Msg</th><th>Estado</th><th>Control</th>
                 </tr></thead>
-                <tbody><tr><td colspan="7" class="loading">Cargando...</td></tr></tbody>
+                <tbody><tr><td colspan="8" class="loading">Cargando...</td></tr></tbody>
             </table>
 
             <h2>⏳ Sin Respuesta (>2h)</h2>
@@ -1031,8 +1031,24 @@ contact_info    message_content    message_timestamp    profile_image
                 // All leads
                 const leadsRes = await fetch('/api/admin/leads');
                 const leads = await leadsRes.json();
-                document.querySelector('#leads-table tbody').innerHTML = leads.length > 0 ?
-                    leads.map(l => '<tr><td><a onclick="copyPhone(' + JSON.stringify(l.telefono) + ')">' + l.telefono + '</a></td><td>' + l.nombre + '</td><td>' + l.producto_preferido + '</td><td>' + l.score + '</td><td>' + getBadgeIntention(l.intencion) + '</td><td>' + new Date(l.ultimo_mensaje).toLocaleTimeString('es-PY') + '</td><td>' + (l.fue_cliente ? '<span class="badge badge-success">✓ Cliente</span>' : '<span class="badge badge-pending">Lead</span>') + '</td></tr>').join('') : '<tr><td colspan="7">Sin leads</td></tr>';
+
+                // Cargar estado de control para cada lead
+                const leadsConControl = await Promise.all(
+                    leads.map(async (l) => {
+                        const controlRes = await fetch('/api/admin/chat-status?telefono=' + encodeURIComponent(l.telefono));
+                        const controlData = await controlRes.json();
+                        return { ...l, control: controlData.control };
+                    })
+                );
+
+                document.querySelector('#leads-table tbody').innerHTML = leadsConControl.length > 0 ?
+                    leadsConControl.map(l => {
+                        const controlBadge = l.control === 'admin' ?
+                            '<span class="badge" style="background: #ef4444;">🔇 Admin</span>' :
+                            '<span class="badge badge-success">🤖 Bot</span>';
+                        const toggleBtn = '<button onclick="toggleControl(' + JSON.stringify(l.telefono) + ')" style="padding: 5px 10px; font-size: 12px; background: ' + (l.control === 'admin' ? '#10b981' : '#ef4444') + ';">' + (l.control === 'admin' ? '▶️ Activar' : '⏸️ Pausar') + '</button>';
+                        return '<tr><td><a onclick="copyPhone(' + JSON.stringify(l.telefono) + ')">' + l.telefono + '</a></td><td>' + l.nombre + '</td><td>' + l.producto_preferido + '</td><td>' + l.score + '</td><td>' + getBadgeIntention(l.intencion) + '</td><td>' + new Date(l.ultimo_mensaje).toLocaleTimeString('es-PY') + '</td><td>' + (l.fue_cliente ? '<span class="badge badge-success">✓ Cliente</span>' : '<span class="badge badge-pending">Lead</span>') + '</td><td>' + controlBadge + ' ' + toggleBtn + '</td></tr>';
+                    }).join('') : '<tr><td colspan="8">Sin leads</td></tr>';
 
                 // Sin respuesta
                 const sinRespRes = await fetch('/api/admin/sin-respuesta?horas=2');
@@ -1126,6 +1142,19 @@ contact_info    message_content    message_timestamp    profile_image
             const res = await fetch('/api/admin/liberar-control?telefono=' + tel, {method: 'POST'});
             const data = await res.json();
             document.getElementById('control-resultado').innerText = data.exito ? '✓ ' + data.mensaje : '✗ ' + data.mensaje;
+        }
+
+        async function toggleControl(telefono) {
+            try {
+                const res = await fetch('/api/admin/toggle-control?telefono=' + encodeURIComponent(telefono), {method: 'POST'});
+                const data = await res.json();
+                console.log('Toggle:', data);
+                // Recargar tabla
+                await cargarDashboard();
+            } catch (e) {
+                console.error('Error toggling control:', e);
+                alert('Error al cambiar control: ' + e);
+            }
         }
 
         // FUNCIONES DE CLIENTES IMPORTADOS
