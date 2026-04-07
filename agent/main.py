@@ -372,7 +372,7 @@ async def webhook_handler(request: Request):
 
                 # Generar respuesta con Claude
                 logger.debug("Llamando a Claude AI...")
-                respuesta = await generar_respuesta(mensaje_contextualizado, historial)
+                respuesta = await generar_respuesta(mensaje_contextualizado, historial, imagen_url=msg.imagen_url)
 
                 # Guardar mensaje del usuario
                 await guardar_mensaje(msg.telefono, "user", msg.texto)

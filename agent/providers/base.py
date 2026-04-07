@@ -22,6 +22,7 @@ class MensajeEntrante:
     mensaje_id: str          # ID único del mensaje
     es_propio: bool          # True si lo envió el agente (se ignora)
     payload: str | None = None  # Metadata del anuncio (ej: "depuffing_wand", "theragun_mini")
+    imagen_url: str | None = None  # URL de imagen si el mensaje es una imagen
 
 
 class ProveedorWhatsApp(ABC):

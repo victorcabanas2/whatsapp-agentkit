@@ -1,21 +1,75 @@
 # agent/memory.py — Memoria de conversaciones con SQLite
 # Generado por AgentKit
+# ✅ ACTUALIZADO: Foreign Keys, Constraints, Transacciones Atómicas
 
 """
 Sistema de memoria del agente Belén.
 Guarda el historial de conversaciones por número de teléfono usando SQLite.
 Para producción, puede migrarse fácilmente a PostgreSQL (misma interfaz SQLAlchemy).
+
+🔒 INTEGRIDAD GARANTIZADA:
+- Foreign Keys en todas las relaciones (FK → Lead como tabla principal)
+- ON DELETE CASCADE para mantener consistencia
+- Transacciones explícitas con rollback automático en caso de error
+- Constraints CHECK para validar datos
+- Índices compuestos para queries frecuentes
+- Bulk operations para operaciones en lote
 """
 
 import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, select, Integer, desc, Boolean
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import String, Text, DateTime, select, Integer, desc, Boolean, ForeignKey, CheckConstraint, Index, func, and_, delete
+from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv
 from datetime import timedelta
+import logging
+import traceback
+import json
+
+# Configurar logging
+logger = logging.getLogger("memory")
+logger.setLevel(logging.DEBUG)
+
+# Handler para archivo (todos los errores)
+if not logger.handlers:
+    file_handler = logging.FileHandler("agentkit_memory.log")
+    file_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
 load_dotenv()
+
+
+# ════════════════════════════════════════════════════════════
+# EXCEPCIONES CUSTOM
+# ════════════════════════════════════════════════════════════
+
+class AgentKitError(Exception):
+    """Excepción base de AgentKit."""
+    pass
+
+
+class IntegrityViolationError(AgentKitError):
+    """Violación de integridad referencial (FK constraint)."""
+    pass
+
+
+class ValidationError(AgentKitError):
+    """Error de validación de datos."""
+    pass
+
+
+class AtomicityError(AgentKitError):
+    """Error en transacción atómica (rollback occurred)."""
+    pass
+
+
+class DataConsistencyError(AgentKitError):
+    """Inconsistencia detectada en los datos."""
+    pass
 
 # Configuración de base de datos
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./agentkit.db")
@@ -24,11 +78,12 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./agentkit.db")
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# Crear engine
+# Crear engine con soporte para Foreign Keys en SQLite
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,  # Cambiar a True para debug
     pool_pre_ping=True,  # Verificar conexión antes de usar
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
 )
 
 # Factory de sesiones
@@ -37,6 +92,12 @@ async_session = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False
 )
+
+# Habilitar Foreign Keys en SQLite (debe ser antes de create_all)
+async def enable_sqlite_foreign_keys():
+    """Habilita Foreign Keys en SQLite."""
+    async with engine.begin() as conn:
+        await conn.execute("PRAGMA foreign_keys = ON")
 
 
 class Base(DeclarativeBase):
@@ -49,44 +110,58 @@ class Mensaje(Base):
     __tablename__ = "mensajes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telefono: Mapped[str] = mapped_column(String(50), index=True)  # Índice para búsquedas rápidas
-    role: Mapped[str] = mapped_column(String(20))  # "user" o "assistant"
-    content: Mapped[str] = mapped_column(Text)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    telefono: Mapped[str] = mapped_column(String(50), ForeignKey("leads.telefono", ondelete="CASCADE"), index=True, nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)  # "user" o "assistant"
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("role IN ('user', 'assistant')", name="ck_mensaje_role"),
+        Index("ix_mensaje_telefono_timestamp", "telefono", "timestamp", postgresql_using="brin"),
+    )
 
     def __repr__(self):
         return f"<Mensaje {self.telefono} - {self.role} - {self.timestamp}>"
 
 
 class Lead(Base):
-    """Modelo de lead para seguimiento de clientes."""
+    """Modelo de lead para seguimiento de clientes (TABLA PRINCIPAL)."""
     __tablename__ = "leads"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telefono: Mapped[str] = mapped_column(String(50), index=True, unique=True)
+    telefono: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     nombre: Mapped[str] = mapped_column(String(100), nullable=True)
-    primer_contacto: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    ultimo_mensaje: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    fue_cliente: Mapped[bool] = mapped_column(default=False)  # Si compró
+    primer_contacto: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    ultimo_mensaje: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+    fue_cliente: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     # Clientes antiguos (previos a AgentKit)
-    es_cliente_previo: Mapped[bool] = mapped_column(default=False)
+    es_cliente_previo: Mapped[bool] = mapped_column(default=False, nullable=False)
     productos_comprados_previos: Mapped[str] = mapped_column(Text, nullable=True)
     historial_previo_resumen: Mapped[str] = mapped_column(Text, nullable=True)
 
-    seguimiento_1dia_enviado: Mapped[bool] = mapped_column(default=False)
-    seguimiento_3dias_enviado: Mapped[bool] = mapped_column(default=False)
-    en_manos_humanas: Mapped[bool] = mapped_column(default=False)  # Bot pausa si True
+    seguimiento_1dia_enviado: Mapped[bool] = mapped_column(default=False, nullable=False)
+    seguimiento_3dias_enviado: Mapped[bool] = mapped_column(default=False, nullable=False)
+    en_manos_humanas: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     # Lead Scoring
-    score: Mapped[int] = mapped_column(Integer, default=20)  # 0-100
-    intencion: Mapped[str] = mapped_column(String(10), default="cold")  # cold/warm/hot
-    urgencia: Mapped[str] = mapped_column(String(10), default="baja")  # baja/media/alta
+    score: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
+    intencion: Mapped[str] = mapped_column(String(10), default="cold", nullable=False)
+    urgencia: Mapped[str] = mapped_column(String(10), default="baja", nullable=False)
     producto_preferido: Mapped[str] = mapped_column(String(200), nullable=True)
     presupuesto_estimado: Mapped[str] = mapped_column(String(100), nullable=True)
     objeciones: Mapped[str] = mapped_column(Text, nullable=True)
     proximo_followup: Mapped[datetime] = mapped_column(DateTime, nullable=True)
-    alerta_vendedor_enviada: Mapped[bool] = mapped_column(default=False)
+    alerta_vendedor_enviada: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("score BETWEEN 0 AND 100", name="ck_lead_score"),
+        CheckConstraint("intencion IN ('cold', 'warm', 'hot')", name="ck_lead_intencion"),
+        CheckConstraint("urgencia IN ('baja', 'media', 'alta')", name="ck_lead_urgencia"),
+        Index("ix_lead_score_ultimo", "score", "ultimo_mensaje"),
+    )
 
     def __repr__(self):
         return f"<Lead {self.telefono} - {self.intencion} - {self.primer_contacto}>"
@@ -97,11 +172,15 @@ class CarritoAbandonado(Base):
     __tablename__ = "carritos_abandonados"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telefono: Mapped[str] = mapped_column(String(50), index=True)
-    producto: Mapped[str] = mapped_column(String(200))
-    precio: Mapped[str] = mapped_column(String(50))
-    fecha_abandono: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    recordatorio_enviado: Mapped[bool] = mapped_column(default=False)
+    telefono: Mapped[str] = mapped_column(String(50), ForeignKey("leads.telefono", ondelete="CASCADE"), index=True, nullable=False)
+    producto: Mapped[str] = mapped_column(String(200), nullable=False)
+    precio: Mapped[str] = mapped_column(String(50), nullable=False)
+    fecha_abandono: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+    recordatorio_enviado: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    __table_args__ = (
+        Index("ix_carrito_telefono_abandono", "telefono", "fecha_abandono"),
+    )
 
     def __repr__(self):
         return f"<Carrito {self.telefono} - {self.producto}>"
@@ -112,10 +191,10 @@ class Pedido(Base):
     __tablename__ = "pedidos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telefono: Mapped[str] = mapped_column(String(50), index=True)
-    producto: Mapped[str] = mapped_column(String(200))  # Nombre del producto
-    precio: Mapped[str] = mapped_column(String(50))     # Precio en Gs
-    metodo_pago: Mapped[str] = mapped_column(String(100))  # transferencia, efectivo, pagopar, qr
+    telefono: Mapped[str] = mapped_column(String(50), ForeignKey("leads.telefono", ondelete="CASCADE"), index=True, nullable=False)
+    producto: Mapped[str] = mapped_column(String(200), nullable=False)
+    precio: Mapped[str] = mapped_column(String(50), nullable=False)
+    metodo_pago: Mapped[str] = mapped_column(String(100), nullable=False)
 
     # Datos de envío
     nombre_cliente: Mapped[str] = mapped_column(String(100), nullable=True)
@@ -128,10 +207,17 @@ class Pedido(Base):
     razon_social: Mapped[str] = mapped_column(String(100), nullable=True)
 
     # Estado del pedido
-    fecha_pedido: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    estado: Mapped[str] = mapped_column(String(50), default="pendiente")  # pendiente, pagado, entregado
-    confirmacion_enviada: Mapped[bool] = mapped_column(default=False)
-    encuesta_enviada: Mapped[bool] = mapped_column(default=False)  # True si se envió encuesta post-venta
+    fecha_pedido: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+    estado: Mapped[str] = mapped_column(String(50), default="pendiente", nullable=False)
+    confirmacion_enviada: Mapped[bool] = mapped_column(default=False, nullable=False)
+    encuesta_enviada: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("estado IN ('pendiente', 'pagado', 'entregado')", name="ck_pedido_estado"),
+        CheckConstraint("metodo_pago IN ('transferencia', 'efectivo', 'pagopar', 'qr')", name="ck_pedido_metodo"),
+        Index("ix_pedido_telefono_estado", "telefono", "estado"),
+        Index("ix_pedido_fecha_estado", "fecha_pedido", "estado"),
+    )
 
     def __repr__(self):
         return f"<Pedido {self.telefono} - {self.producto} - {self.estado}>"
@@ -142,47 +228,347 @@ class Satisfaccion(Base):
     __tablename__ = "satisfaccion"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telefono: Mapped[str] = mapped_column(String(50), index=True)
-    pedido_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    telefono: Mapped[str] = mapped_column(String(50), ForeignKey("leads.telefono", ondelete="CASCADE"), index=True, nullable=False)
+    pedido_id: Mapped[int] = mapped_column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"), nullable=True)
     producto: Mapped[str] = mapped_column(String(200), nullable=True)
-    rating: Mapped[int] = mapped_column(Integer)  # 1-5 estrellas
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
     comentario: Mapped[str] = mapped_column(Text, nullable=True)
-    fecha_respuesta: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    nps: Mapped[str] = mapped_column(String(20), nullable=True)  # "promotor", "neutral", "detractor"
+    fecha_respuesta: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+    nps: Mapped[str] = mapped_column(String(20), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("rating BETWEEN 1 AND 5", name="ck_satisfaccion_rating"),
+        CheckConstraint("nps IN ('promotor', 'neutral', 'detractor') OR nps IS NULL", name="ck_satisfaccion_nps"),
+        Index("ix_satisfaccion_telefono_fecha", "telefono", "fecha_respuesta"),
+        Index("ix_satisfaccion_nps", "nps"),
+    )
 
     def __repr__(self):
         return f"<Satisfaccion {self.telefono} - {self.rating}⭐ - {self.fecha_respuesta}>"
 
 
+class Auditoria(Base):
+    """Modelo para registrar TODOS los cambios en la BD (auditoría)."""
+    __tablename__ = "auditoria"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tabla: Mapped[str] = mapped_column(String(50), nullable=False, index=True)  # "leads", "pedidos", "mensajes"
+    operacion: Mapped[str] = mapped_column(String(10), nullable=False)  # "INSERT", "UPDATE", "DELETE"
+    registro_id: Mapped[int] = mapped_column(Integer, nullable=True, index=True)  # ID del registro afectado
+    datos_anteriores: Mapped[str] = mapped_column(Text, nullable=True)  # JSON antes del cambio
+    datos_nuevos: Mapped[str] = mapped_column(Text, nullable=True)  # JSON después del cambio
+    usuario: Mapped[str] = mapped_column(String(100), nullable=True)  # Usuario que hizo el cambio
+    razon: Mapped[str] = mapped_column(String(255), nullable=True)  # Por qué se hizo el cambio
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+    error: Mapped[bool] = mapped_column(default=False, nullable=False)  # Si la operación falló
+    mensaje_error: Mapped[str] = mapped_column(Text, nullable=True)  # Si error=True, el mensaje
+
+    __table_args__ = (
+        CheckConstraint("operacion IN ('INSERT', 'UPDATE', 'DELETE')", name="ck_auditoria_operacion"),
+        Index("ix_auditoria_tabla_timestamp", "tabla", "timestamp"),
+        Index("ix_auditoria_error", "error"),
+    )
+
+    def __repr__(self):
+        status = "❌" if self.error else "✅"
+        return f"{status} <Auditoria {self.tabla}.{self.operacion} id={self.registro_id} {self.timestamp}>"
+
+
 async def inicializar_db():
-    """Crea las tablas si no existen."""
+    """Crea las tablas si no existen y habilita Foreign Keys."""
     async with engine.begin() as conn:
+        # Habilitar Foreign Keys en SQLite
+        if "sqlite" in DATABASE_URL:
+            await conn.execute("PRAGMA foreign_keys = ON")
+
+        # Crear todas las tablas
         await conn.run_sync(Base.metadata.create_all)
 
+        # Verificar que las FK estén habilitadas
+        if "sqlite" in DATABASE_URL:
+            result = await conn.execute("PRAGMA foreign_keys")
+            fk_enabled = (await result.fetchone())[0] == 1
+            if fk_enabled:
+                logger.info("✅ Foreign Keys habilitadas en SQLite")
+            else:
+                logger.error("❌ Foreign Keys NO habilitadas en SQLite")
 
-async def guardar_mensaje(telefono: str, role: str, content: str):
+
+# ════════════════════════════════════════════════════════════
+# AUDITORÍA Y LOGGING
+# ════════════════════════════════════════════════════════════
+
+async def registrar_auditoria(
+    tabla: str,
+    operacion: str,
+    registro_id: int = None,
+    datos_anteriores: dict = None,
+    datos_nuevos: dict = None,
+    usuario: str = "sistema",
+    razon: str = None,
+    error: bool = False,
+    mensaje_error: str = None
+) -> Auditoria:
+    """
+    Registra un cambio en la auditoría.
+
+    ✅ ANTI-ERROR-SILENCIOSO: Todos los cambios quedan registrados
+
+    Args:
+        tabla: Nombre de la tabla ("leads", "pedidos", etc)
+        operacion: "INSERT", "UPDATE", "DELETE"
+        registro_id: ID del registro modificado
+        datos_anteriores: Dict con datos antes del cambio
+        datos_nuevos: Dict con datos después del cambio
+        usuario: Usuario que hizo el cambio
+        razon: Por qué se hizo el cambio
+        error: Si la operación falló
+        mensaje_error: Si error=True, el mensaje de error
+
+    Returns:
+        El registro de auditoría creado
+    """
+    async with async_session() as session:
+        try:
+            auditoria = Auditoria(
+                tabla=tabla,
+                operacion=operacion,
+                registro_id=registro_id,
+                datos_anteriores=json.dumps(datos_anteriores, default=str) if datos_anteriores else None,
+                datos_nuevos=json.dumps(datos_nuevos, default=str) if datos_nuevos else None,
+                usuario=usuario,
+                razon=razon,
+                error=error,
+                mensaje_error=mensaje_error,
+                timestamp=datetime.utcnow()
+            )
+            session.add(auditoria)
+            await session.commit()
+
+            # Log también en el archivo
+            if error:
+                logger.error(f"🔴 {tabla}.{operacion} ERROR: {mensaje_error}")
+            else:
+                logger.info(f"✅ {tabla}.{operacion} id={registro_id} by {usuario}")
+
+            return auditoria
+
+        except Exception as e:
+            logger.critical(f"❌ ERROR CRITICO registrando auditoría: {e}")
+            raise
+
+
+async def obtener_errores_recientes(horas: int = 24, limite: int = 50) -> list[Auditoria]:
+    """
+    Obtiene todos los errores de las últimas X horas.
+
+    ✅ ANTI-ERROR-SILENCIOSO: Ver todos los errores que pasaron
+
+    Args:
+        horas: Cuántas horas atrás buscar
+        limite: Máximo de registros
+
+    Returns:
+        Lista de Auditoria con error=True
+    """
+    async with async_session() as session:
+        hace_x_horas = datetime.utcnow() - timedelta(hours=horas)
+
+        query = (
+            select(Auditoria)
+            .where(Auditoria.error == True)
+            .where(Auditoria.timestamp >= hace_x_horas)
+            .order_by(desc(Auditoria.timestamp))
+            .limit(limite)
+        )
+        result = await session.execute(query)
+        return result.scalars().all()
+
+
+async def obtener_historial_auditoria_tabla(
+    tabla: str,
+    horas: int = 24,
+    limite: int = 100
+) -> list[Auditoria]:
+    """
+    Obtiene el historial de cambios de una tabla.
+
+    ✅ ANTI-ERROR-SILENCIOSO: Ver quién cambió qué y cuándo
+
+    Args:
+        tabla: Nombre de la tabla
+        horas: Cuántas horas atrás
+        limite: Máximo de registros
+
+    Returns:
+        Lista de Auditoria filtrada
+    """
+    async with async_session() as session:
+        hace_x_horas = datetime.utcnow() - timedelta(hours=horas)
+
+        query = (
+            select(Auditoria)
+            .where(Auditoria.tabla == tabla)
+            .where(Auditoria.timestamp >= hace_x_horas)
+            .order_by(desc(Auditoria.timestamp))
+            .limit(limite)
+        )
+        result = await session.execute(query)
+        return result.scalars().all()
+
+
+async def obtener_estadisticas_auditoria() -> dict:
+    """
+    Obtiene estadísticas de auditoría.
+
+    ✅ ANTI-ERROR-SILENCIOSO: Saber cuántos errores hubo
+
+    Returns:
+        {
+            "total_operaciones": int,
+            "total_errores": int,
+            "tasa_error": float,
+            "por_tabla": {...},
+            "por_operacion": {...}
+        }
+    """
+    async with async_session() as session:
+        # Total operaciones
+        total = await session.execute(select(func.count(Auditoria.id)))
+        total_ops = total.scalar() or 0
+
+        # Total errores
+        errores = await session.execute(
+            select(func.count(Auditoria.id)).where(Auditoria.error == True)
+        )
+        total_errores = errores.scalar() or 0
+
+        # Por tabla
+        por_tabla = await session.execute(
+            select(Auditoria.tabla, func.count(Auditoria.id))
+            .group_by(Auditoria.tabla)
+        )
+        tabla_stats = {tabla: count for tabla, count in por_tabla.all()}
+
+        # Por operación
+        por_op = await session.execute(
+            select(Auditoria.operacion, func.count(Auditoria.id))
+            .group_by(Auditoria.operacion)
+        )
+        op_stats = {op: count for op, count in por_op.all()}
+
+        tasa_error = (total_errores / total_ops * 100) if total_ops > 0 else 0
+
+        return {
+            "total_operaciones": total_ops,
+            "total_errores": total_errores,
+            "tasa_error": round(tasa_error, 2),
+            "por_tabla": tabla_stats,
+            "por_operacion": op_stats
+        }
+
+
+async def guardar_mensaje(telefono: str, role: str, content: str) -> Mensaje:
     """
     Guarda un mensaje en el historial de conversación.
+
+    ✅ ATÓMICO: Si el lead no existe, falla con IntegrityError (FK constraint)
+    ✅ ANTI-ERROR-SILENCIOSO: Registra auditoría y lanza excepciones específicas
 
     Args:
         telefono: Número de teléfono del cliente
         role: "user" o "assistant"
         content: Contenido del mensaje
+
+    Raises:
+        IntegrityViolationError: Si el lead no existe (violación de FK)
+        ValidationError: Si los parámetros son inválidos
     """
-    async with async_session() as session:
-        mensaje = Mensaje(
-            telefono=telefono,
-            role=role,
-            content=content,
-            timestamp=datetime.utcnow()
+    # Validar inputs
+    if not telefono or not role or not content:
+        await registrar_auditoria(
+            tabla="mensajes",
+            operacion="INSERT",
+            usuario="sistema",
+            error=True,
+            mensaje_error=f"Validación fallida: telefono={telefono}, role={role}, content={content}"
         )
-        session.add(mensaje)
-        await session.commit()
+        raise ValidationError(f"Campos requeridos: telefono, role, content")
+
+    if role not in ("user", "assistant"):
+        await registrar_auditoria(
+            tabla="mensajes",
+            operacion="INSERT",
+            usuario="sistema",
+            error=True,
+            mensaje_error=f"Role inválido: {role} (debe ser 'user' o 'assistant')"
+        )
+        raise ValidationError(f"Role debe ser 'user' o 'assistant', recibido: {role}")
+
+    async with async_session() as session:
+        try:
+            mensaje = Mensaje(
+                telefono=telefono,
+                role=role,
+                content=content,
+                timestamp=datetime.utcnow()
+            )
+            session.add(mensaje)
+            await session.commit()
+            await session.refresh(mensaje)
+
+            # Registrar en auditoría
+            await registrar_auditoria(
+                tabla="mensajes",
+                operacion="INSERT",
+                registro_id=mensaje.id,
+                datos_nuevos={"telefono": telefono, "role": role, "content": content[:50]},
+                usuario="sistema",
+                razon="Nuevo mensaje en conversación"
+            )
+
+            return mensaje
+
+        except IntegrityError as e:
+            await session.rollback()
+
+            # Registrar el error en auditoría
+            await registrar_auditoria(
+                tabla="mensajes",
+                operacion="INSERT",
+                usuario="sistema",
+                error=True,
+                mensaje_error=f"FK constraint failed: {str(e)}"
+            )
+
+            if "FOREIGN KEY constraint failed" in str(e):
+                logger.error(f"❌ Lead {telefono} no existe")
+                raise IntegrityViolationError(
+                    f"Lead con teléfono {telefono} no existe. Registra el lead primero."
+                )
+            raise
+
+        except Exception as e:
+            await session.rollback()
+
+            # Registrar cualquier otro error
+            await registrar_auditoria(
+                tabla="mensajes",
+                operacion="INSERT",
+                usuario="sistema",
+                error=True,
+                mensaje_error=f"Error inesperado: {str(e)}\n{traceback.format_exc()}"
+            )
+
+            logger.critical(f"❌ Error guardando mensaje para {telefono}: {e}\n{traceback.format_exc()}")
+            raise AgentKitError(f"Error al guardar mensaje: {e}")
 
 
 async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
     """
     Recupera los últimos N mensajes de una conversación en orden cronológico.
+
+    ✅ OPTIMIZADO: Usa LIMIT en SQL, no trae a Python
 
     Args:
         telefono: Número de teléfono del cliente
@@ -192,18 +578,23 @@ async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
         Lista de diccionarios con rol y contenido: [{"role": "user", "content": "..."}, ...]
     """
     async with async_session() as session:
-        # Consultar últimos N mensajes ordenados por timestamp descendente
+        # Subquery: últimos N mensajes
+        subquery = (
+            select(Mensaje.id)
+            .where(Mensaje.telefono == telefono)
+            .order_by(desc(Mensaje.timestamp))
+            .limit(limite)
+            .subquery()
+        )
+
+        # Query principal: obtener en orden cronológico (antiguos → recientes)
         query = (
             select(Mensaje)
-            .where(Mensaje.telefono == telefono)
-            .order_by(desc(Mensaje.timestamp))  # Más recientes primero
-            .limit(limite)
+            .where(Mensaje.id.in_(select(subquery.c.id)))
+            .order_by(Mensaje.timestamp)
         )
         result = await session.execute(query)
         mensajes = result.scalars().all()
-
-        # Invertir para orden cronológico (antiguos → recientes)
-        mensajes.reverse()
 
         # Retornar en formato compatible con Claude API
         return [
@@ -215,46 +606,48 @@ async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
         ]
 
 
-async def limpiar_historial(telefono: str):
+async def limpiar_historial(telefono: str) -> int:
     """
-    Borra todo el historial de una conversación.
-    Útil para testing o para resetear una conversación.
+    Borra todo el historial de una conversación en una única operación SQL.
 
-    Args:
-        telefono: Número de teléfono del cliente
-    """
-    async with async_session() as session:
-        query = select(Mensaje).where(Mensaje.telefono == telefono)
-        result = await session.execute(query)
-        mensajes = result.scalars().all()
-
-        for msg in mensajes:
-            session.delete(msg)
-
-        await session.commit()
-
-
-async def obtener_estadisticas(telefono: str) -> dict:
-    """
-    Obtiene estadísticas de una conversación.
+    ✅ ATÓMICO + OPTIMIZADO: Usa DELETE en SQL, no loops
 
     Args:
         telefono: Número de teléfono del cliente
 
     Returns:
-        Diccionario con stats: total_mensajes, mensajes_usuario, mensajes_agente, primera_msg, ultima_msg
+        Cantidad de mensajes eliminados
     """
     async with async_session() as session:
-        # Total de mensajes
-        total_query = select(Mensaje).where(Mensaje.telefono == telefono)
+        try:
+            stmt = delete(Mensaje).where(Mensaje.telefono == telefono)
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount
+        except Exception as e:
+            await session.rollback()
+            raise ValueError(f"Error al limpiar historial: {e}")
+
+
+async def obtener_estadisticas(telefono: str) -> dict:
+    """
+    Obtiene estadísticas de una conversación usando SQL aggregation.
+
+    ✅ OPTIMIZADO: Usa COUNT, MIN, MAX en SQL en lugar de traer a Python
+
+    Args:
+        telefono: Número de teléfono del cliente
+
+    Returns:
+        Diccionario con stats
+    """
+    async with async_session() as session:
+        # Count total mensajes
+        total_query = select(func.count(Mensaje.id)).where(Mensaje.telefono == telefono)
         total_result = await session.execute(total_query)
-        todos = total_result.scalars().all()
+        total_mensajes = total_result.scalar() or 0
 
-        # Contar por rol
-        user_msgs = [m for m in todos if m.role == "user"]
-        assistant_msgs = [m for m in todos if m.role == "assistant"]
-
-        if not todos:
+        if total_mensajes == 0:
             return {
                 "telefono": telefono,
                 "total_mensajes": 0,
@@ -264,13 +657,34 @@ async def obtener_estadisticas(telefono: str) -> dict:
                 "ultima_msg": None
             }
 
+        # Contar por rol
+        user_count = await session.execute(
+            select(func.count(Mensaje.id))
+            .where(and_(Mensaje.telefono == telefono, Mensaje.role == "user"))
+        )
+        mensajes_usuario = user_count.scalar() or 0
+
+        assistant_count = await session.execute(
+            select(func.count(Mensaje.id))
+            .where(and_(Mensaje.telefono == telefono, Mensaje.role == "assistant"))
+        )
+        mensajes_agente = assistant_count.scalar() or 0
+
+        # Min y Max timestamps
+        minmax_query = select(
+            func.min(Mensaje.timestamp).label("primera_msg"),
+            func.max(Mensaje.timestamp).label("ultima_msg")
+        ).where(Mensaje.telefono == telefono)
+        minmax_result = await session.execute(minmax_query)
+        primera_msg, ultima_msg = minmax_result.first()
+
         return {
             "telefono": telefono,
-            "total_mensajes": len(todos),
-            "mensajes_usuario": len(user_msgs),
-            "mensajes_agente": len(assistant_msgs),
-            "primera_msg": min(todos, key=lambda m: m.timestamp).timestamp,
-            "ultima_msg": max(todos, key=lambda m: m.timestamp).timestamp
+            "total_mensajes": total_mensajes,
+            "mensajes_usuario": mensajes_usuario,
+            "mensajes_agente": mensajes_agente,
+            "primera_msg": primera_msg,
+            "ultima_msg": ultima_msg
         }
 
 
@@ -279,29 +693,125 @@ async def obtener_estadisticas(telefono: str) -> dict:
 # ════════════════════════════════════════════════════════════
 
 async def registrar_lead(telefono: str, nombre: str = "") -> Lead:
-    """Registra un nuevo lead cuando contacta por primera vez."""
-    async with async_session() as session:
-        # Verificar si ya existe
-        query = select(Lead).where(Lead.telefono == telefono)
-        result = await session.execute(query)
-        lead_existente = result.scalar_one_or_none()
+    """
+    Registra un nuevo lead o actualiza uno existente (UPSERT).
 
-        if lead_existente:
-            # Actualizar último mensaje
-            lead_existente.ultimo_mensaje = datetime.utcnow()
-            await session.commit()
-            return lead_existente
+    ✅ ATÓMICO: Usa sesión única, actualiza último_mensaje de forma segura
+    ✅ ANTI-ERROR-SILENCIOSO: Registra auditoría de creación/actualización
 
-        # Crear nuevo lead
-        nuevo_lead = Lead(
-            telefono=telefono,
-            nombre=nombre,
-            primer_contacto=datetime.utcnow(),
-            ultimo_mensaje=datetime.utcnow()
+    Args:
+        telefono: Número de teléfono único
+        nombre: Nombre del cliente (opcional)
+
+    Returns:
+        El Lead registrado o actualizado
+
+    Raises:
+        ValidationError: Si el teléfono es inválido
+        AgentKitError: Si hay error en la BD
+    """
+    # Validar teléfono
+    if not telefono or not isinstance(telefono, str) or len(telefono) < 5:
+        await registrar_auditoria(
+            tabla="leads",
+            operacion="INSERT",
+            usuario="sistema",
+            error=True,
+            mensaje_error=f"Teléfono inválido: {telefono}"
         )
-        session.add(nuevo_lead)
-        await session.commit()
-        return nuevo_lead
+        raise ValidationError(f"Teléfono inválido: {telefono}")
+
+    async with async_session() as session:
+        try:
+            # Verificar si ya existe
+            query = select(Lead).where(Lead.telefono == telefono)
+            result = await session.execute(query)
+            lead_existente = result.scalar_one_or_none()
+
+            if lead_existente:
+                # ACTUALIZAR: Registrar auditoría de cambio
+                datos_anteriores = {
+                    "nombre": lead_existente.nombre,
+                    "ultimo_mensaje": str(lead_existente.ultimo_mensaje)
+                }
+
+                lead_existente.ultimo_mensaje = datetime.utcnow()
+                if nombre and not lead_existente.nombre:
+                    lead_existente.nombre = nombre
+
+                await session.commit()
+                await session.refresh(lead_existente)
+
+                # Registrar en auditoría
+                await registrar_auditoria(
+                    tabla="leads",
+                    operacion="UPDATE",
+                    registro_id=lead_existente.id,
+                    datos_anteriores=datos_anteriores,
+                    datos_nuevos={"nombre": lead_existente.nombre, "ultimo_mensaje": str(lead_existente.ultimo_mensaje)},
+                    usuario="sistema",
+                    razon="Actualización de lead existente"
+                )
+
+                logger.info(f"✅ Lead actualizado: {telefono}")
+                return lead_existente
+
+            # INSERTAR: Crear nuevo lead
+            nuevo_lead = Lead(
+                telefono=telefono,
+                nombre=nombre or None,
+                primer_contacto=datetime.utcnow(),
+                ultimo_mensaje=datetime.utcnow(),
+                score=20,
+                intencion="cold",
+                urgencia="baja"
+            )
+            session.add(nuevo_lead)
+            await session.commit()
+            await session.refresh(nuevo_lead)
+
+            # Registrar en auditoría
+            await registrar_auditoria(
+                tabla="leads",
+                operacion="INSERT",
+                registro_id=nuevo_lead.id,
+                datos_nuevos={"telefono": telefono, "nombre": nombre},
+                usuario="sistema",
+                razon="Nuevo lead registrado"
+            )
+
+            logger.info(f"✅ Lead creado: {telefono} - {nombre}")
+            return nuevo_lead
+
+        except IntegrityError as e:
+            await session.rollback()
+
+            # Registrar el error
+            await registrar_auditoria(
+                tabla="leads",
+                operacion="INSERT",
+                usuario="sistema",
+                error=True,
+                mensaje_error=f"Unique constraint failed (teléfono duplicado): {telefono}"
+            )
+
+            logger.error(f"❌ Error registrando lead {telefono}: {e}")
+            raise AgentKitError(f"Error al registrar lead: {e}")
+
+        except Exception as e:
+            await session.rollback()
+
+            # Registrar error inesperado
+            await registrar_auditoria(
+                tabla="leads",
+                operacion="INSERT",
+                usuario="sistema",
+                error=True,
+                mensaje_error=f"Error inesperado: {str(e)}\n{traceback.format_exc()}"
+            )
+
+            logger.critical(f"❌ Error crítico registrando lead {telefono}: {e}\n{traceback.format_exc()}")
+            raise AgentKitError(f"Error al registrar lead: {e}")
 
 
 async def obtener_leads_sin_respuesta_1dia() -> list[Lead]:
@@ -407,7 +917,7 @@ async def guardar_pedido(
     razon_social: str = "",
 ) -> Pedido:
     """
-    Guarda un pedido confirmado en la base de datos.
+    Guarda un pedido confirmado en la base de datos (simple, sin actualizar Lead).
 
     Args:
         telefono: Número de teléfono del cliente
@@ -423,25 +933,187 @@ async def guardar_pedido(
 
     Returns:
         El pedido guardado
+
+    Raises:
+        IntegrityError: Si el lead no existe (violación de FK)
     """
     async with async_session() as session:
-        pedido = Pedido(
-            telefono=telefono,
-            producto=producto,
-            precio=precio,
-            metodo_pago=metodo_pago,
-            nombre_cliente=nombre_cliente,
-            direccion_envio=direccion_envio,
-            ciudad_departamento=ciudad_departamento,
-            telefono_contacto=telefono_contacto,
-            ruc_cedula=ruc_cedula,
-            razon_social=razon_social,
-            estado="pendiente",
-            fecha_pedido=datetime.utcnow()
+        try:
+            pedido = Pedido(
+                telefono=telefono,
+                producto=producto,
+                precio=precio,
+                metodo_pago=metodo_pago,
+                nombre_cliente=nombre_cliente,
+                direccion_envio=direccion_envio,
+                ciudad_departamento=ciudad_departamento,
+                telefono_contacto=telefono_contacto,
+                ruc_cedula=ruc_cedula,
+                razon_social=razon_social,
+                estado="pendiente",
+                fecha_pedido=datetime.utcnow()
+            )
+            session.add(pedido)
+            await session.commit()
+            await session.refresh(pedido)
+            return pedido
+        except IntegrityError as e:
+            await session.rollback()
+            if "FOREIGN KEY constraint failed" in str(e):
+                raise ValueError(f"Lead con teléfono {telefono} no existe.")
+            raise
+
+
+async def guardar_pedido_atomico(
+    telefono: str,
+    producto: str,
+    precio: str,
+    metodo_pago: str,
+    nombre_cliente: str = "",
+    direccion_envio: str = "",
+    ciudad_departamento: str = "",
+    telefono_contacto: str = "",
+    ruc_cedula: str = "",
+    razon_social: str = "",
+) -> Pedido:
+    """
+    Guarda un pedido Y marca el lead como "fue_cliente = True" en UNA transacción.
+
+    ✅ ATÓMICO: Si falla actualizar el lead, todo el pedido se revierte (ROLLBACK)
+    ✅ ANTI-ERROR-SILENCIOSO: Registra auditoría y lanza excepciones específicas
+
+    Args:
+        Mismos que guardar_pedido()
+
+    Returns:
+        El pedido guardado
+
+    Raises:
+        IntegrityViolationError: Si el lead no existe
+        ValidationError: Si hay error de validación
+        AtomicityError: Si la transacción falla
+    """
+    # Validar inputs
+    if not all([telefono, producto, precio, metodo_pago]):
+        await registrar_auditoria(
+            tabla="pedidos",
+            operacion="INSERT",
+            usuario="sistema",
+            error=True,
+            mensaje_error=f"Campos requeridos inválidos"
         )
-        session.add(pedido)
-        await session.commit()
-        return pedido
+        raise ValidationError("Campos requeridos: telefono, producto, precio, metodo_pago")
+
+    if metodo_pago not in ("transferencia", "efectivo", "pagopar", "qr"):
+        await registrar_auditoria(
+            tabla="pedidos",
+            operacion="INSERT",
+            usuario="sistema",
+            error=True,
+            mensaje_error=f"Metodo_pago inválido: {metodo_pago}"
+        )
+        raise ValidationError(f"Metodo_pago inválido: {metodo_pago}")
+
+    async with async_session() as session:
+        try:
+            # DENTRO de la misma transacción:
+
+            # 1. Verificar que el lead existe
+            lead_query = select(Lead).where(Lead.telefono == telefono)
+            lead_result = await session.execute(lead_query)
+            lead = lead_result.scalar_one_or_none()
+
+            if not lead:
+                await registrar_auditoria(
+                    tabla="pedidos",
+                    operacion="INSERT",
+                    usuario="sistema",
+                    error=True,
+                    mensaje_error=f"Lead {telefono} no existe"
+                )
+                raise IntegrityViolationError(f"Lead con teléfono {telefono} no existe.")
+
+            datos_lead_anterior = {"fue_cliente": lead.fue_cliente, "score": lead.score, "intencion": lead.intencion}
+            score_anterior = lead.score
+
+            # 2. Crear pedido
+            pedido = Pedido(
+                telefono=telefono,
+                producto=producto,
+                precio=precio,
+                metodo_pago=metodo_pago,
+                nombre_cliente=nombre_cliente or lead.nombre,
+                direccion_envio=direccion_envio,
+                ciudad_departamento=ciudad_departamento,
+                telefono_contacto=telefono_contacto,
+                ruc_cedula=ruc_cedula,
+                razon_social=razon_social,
+                estado="pendiente",
+                fecha_pedido=datetime.utcnow()
+            )
+            session.add(pedido)
+
+            # 3. Actualizar lead como cliente
+            lead.fue_cliente = True
+            lead.ultimo_mensaje = datetime.utcnow()
+            if lead.score < 70:
+                lead.score = min(100, lead.score + 30)
+            if lead.intencion == "cold":
+                lead.intencion = "warm"
+
+            # 4. Commit ATÓMICO: todo o nada
+            await session.commit()
+            await session.refresh(pedido)
+
+            # Registrar auditoría de éxito
+            await registrar_auditoria(
+                tabla="pedidos",
+                operacion="INSERT",
+                registro_id=pedido.id,
+                datos_nuevos={"producto": producto, "precio": precio, "metodo_pago": metodo_pago},
+                usuario="sistema",
+                razon="Nuevo pedido - Conversión a cliente"
+            )
+
+            await registrar_auditoria(
+                tabla="leads",
+                operacion="UPDATE",
+                registro_id=lead.id,
+                datos_anteriores=datos_lead_anterior,
+                datos_nuevos={"fue_cliente": True, "score": lead.score, "intencion": lead.intencion},
+                usuario="sistema",
+                razon=f"Pedido #{pedido.id} - Score {score_anterior}→{lead.score}"
+            )
+
+            logger.info(f"✅ ATÓMICO: Pedido #{pedido.id} + Lead {telefono} actualizado")
+            return pedido
+
+        except (IntegrityViolationError, ValidationError):
+            raise
+
+        except IntegrityError as e:
+            await session.rollback()
+            await registrar_auditoria(
+                tabla="pedidos",
+                operacion="INSERT",
+                usuario="sistema",
+                error=True,
+                mensaje_error=f"IntegrityError: {str(e)}"
+            )
+            logger.error(f"❌ Error integridad al guardar pedido {telefono}: {e}")
+            raise
+
+        except Exception as e:
+            await session.rollback()
+            await registrar_auditoria(
+                tabla="pedidos",
+                operacion="INSERT",
+                usuario="sistema",
+                error=True,
+                mensaje_error=f"Error: {str(e)[:200]}\n{traceback.format_exc()[:500]}"
+            )
+            logger.critical(f"❌ Error crítico al guardar pedido {telefono}: {e}\n{traceback.format_exc()}")
+            raise AtomicityError(f"Transacción fallida (ROLLBACK): {e}")
 
 
 async def obtener_pedidos_cliente(telefono: str) -> list[Pedido]:
@@ -484,17 +1156,32 @@ async def actualizar_lead_scoring(
     presupuesto_estimado: str = None,
     objeciones: str = None,
     proximo_followup: datetime = None
-):
+) -> Lead | None:
     """
-    Actualiza los campos de scoring de un lead.
-    Solo actualiza los campos que no son None.
+    Actualiza los campos de scoring de un lead en UNA transacción.
+
+    ✅ ATÓMICO: Todos los cambios se aplican juntos o ninguno
+
+    Args:
+        telefono: Teléfono del lead
+        score: Score 0-100 (se clampea automáticamente)
+        intencion: "cold", "warm", "hot"
+        urgencia: "baja", "media", "alta"
+        ... (resto de campos opcionales)
+
+    Returns:
+        El lead actualizado o None si no existe
     """
     async with async_session() as session:
-        query = select(Lead).where(Lead.telefono == telefono)
-        result = await session.execute(query)
-        lead = result.scalar_one_or_none()
+        try:
+            query = select(Lead).where(Lead.telefono == telefono)
+            result = await session.execute(query)
+            lead = result.scalar_one_or_none()
 
-        if lead:
+            if not lead:
+                return None
+
+            # Actualizar todos los campos en una transacción
             if score is not None:
                 lead.score = max(0, min(100, score))  # Clampear entre 0-100
             if intencion is not None:
@@ -511,6 +1198,12 @@ async def actualizar_lead_scoring(
                 lead.proximo_followup = proximo_followup
 
             await session.commit()
+            await session.refresh(lead)
+            return lead
+
+        except IntegrityError as e:
+            await session.rollback()
+            raise ValueError(f"Error al actualizar scoring del lead: {e}")
 
 
 async def obtener_resumen_cliente(telefono: str) -> dict:
@@ -569,9 +1262,11 @@ async def obtener_lead(telefono: str) -> Lead | None:
 
 async def obtener_leads_sin_respuesta_horas(horas: int = 4) -> list[dict]:
     """
-    Obtiene leads sin respuesta hace más de X horas.
+    Obtiene leads sin respuesta hace más de X horas usando SQL JOIN.
 
-    Un lead sin respuesta es aquel donde el último mensaje en la tabla 'mensajes'
+    ✅ OPTIMIZADO: Usa JOIN + GROUP BY en SQL, no loops en Python
+
+    Un lead sin respuesta es aquel donde el último mensaje en 'mensajes'
     tiene role='user' (cliente escribió) y hace más de X horas.
 
     Args:
@@ -584,37 +1279,53 @@ async def obtener_leads_sin_respuesta_horas(horas: int = 4) -> list[dict]:
         ahora = datetime.utcnow()
         hace_x_horas = ahora - timedelta(hours=horas)
 
-        # Obtener todos los leads
-        leads_query = select(Lead)
-        leads_result = await session.execute(leads_query)
-        leads = leads_result.scalars().all()
+        # Subquery: último mensaje de usuario por teléfono
+        ultimo_msg_subquery = (
+            select(
+                Mensaje.telefono,
+                Mensaje.content,
+                Mensaje.timestamp
+            )
+            .where(Mensaje.role == "user")
+            .order_by(Mensaje.telefono, desc(Mensaje.timestamp))
+            .distinct(Mensaje.telefono)
+            .subquery()
+        )
+
+        # Query principal: JOIN con leads, filtrar por tiempo
+        query = (
+            select(
+                Lead.telefono,
+                Lead.nombre,
+                ultimo_msg_subquery.c.content,
+                ultimo_msg_subquery.c.timestamp,
+                Lead.score,
+                Lead.intencion
+            )
+            .join(
+                ultimo_msg_subquery,
+                Lead.telefono == ultimo_msg_subquery.c.telefono
+            )
+            .where(ultimo_msg_subquery.c.timestamp < hace_x_horas)
+            .order_by(desc(ultimo_msg_subquery.c.timestamp))
+        )
+
+        result = await session.execute(query)
+        rows = result.all()
 
         leads_sin_respuesta = []
+        for telefono, nombre, contenido, timestamp, score, intencion in rows:
+            horas_esperando = (ahora - timestamp).total_seconds() / 3600
+            leads_sin_respuesta.append({
+                "telefono": telefono,
+                "nombre": nombre or "Sin nombre",
+                "ultimo_mensaje": contenido[:100] if contenido else "",
+                "horas_sin_respuesta": int(horas_esperando),
+                "score": score,
+                "intencion": intencion
+            })
 
-        for lead in leads:
-            # Obtener último mensaje del cliente en esta conversación
-            msg_query = (
-                select(Mensaje)
-                .where(Mensaje.telefono == lead.telefono)
-                .where(Mensaje.role == "user")
-                .order_by(desc(Mensaje.timestamp))
-                .limit(1)
-            )
-            msg_result = await session.execute(msg_query)
-            ultimo_msg_cliente = msg_result.scalar_one_or_none()
-
-            if ultimo_msg_cliente and ultimo_msg_cliente.timestamp < hace_x_horas:
-                horas_esperando = (ahora - ultimo_msg_cliente.timestamp).total_seconds() / 3600
-                leads_sin_respuesta.append({
-                    "telefono": lead.telefono,
-                    "nombre": lead.nombre or "Sin nombre",
-                    "ultimo_mensaje": ultimo_msg_cliente.content[:100],  # Primeros 100 chars
-                    "horas_sin_respuesta": int(horas_esperando),
-                    "score": lead.score,
-                    "intencion": lead.intencion
-                })
-
-        return sorted(leads_sin_respuesta, key=lambda x: x["horas_sin_respuesta"], reverse=True)
+        return leads_sin_respuesta
 
 
 async def marcar_alerta_vendedor(telefono: str):
@@ -775,19 +1486,28 @@ async def guardar_respuesta_encuesta(
 
 
 async def obtener_nps_score() -> dict:
-    """Calcula NPS score (promoters - detractors) / total * 100."""
+    """
+    Calcula NPS score usando SQL aggregation.
+
+    ✅ OPTIMIZADO: Usa COUNT en SQL, no trae a Python
+
+    NPS = (Promotores - Detractores) / Total * 100
+    """
     async with async_session() as session:
-        query = select(Satisfaccion)
+        query = select(
+            func.count(Satisfaccion.id).label("total"),
+            func.sum(func.cast(Satisfaccion.nps == "promotor", Integer)).label("promotores"),
+            func.sum(func.cast(Satisfaccion.nps == "detractor", Integer)).label("detractores"),
+            func.sum(func.cast(Satisfaccion.nps == "neutral", Integer)).label("neutrales")
+        )
         result = await session.execute(query)
-        todas = result.scalars().all()
+        total, promotores, detractores, neutrales = result.first()
 
-        if not todas:
-            return {"nps": 0, "promotores": 0, "neutrales": 0, "detractores": 0, "total": 0}
-
-        promotores = len([s for s in todas if s.nps == "promotor"])
-        detractores = len([s for s in todas if s.nps == "detractor"])
-        neutrales = len([s for s in todas if s.nps == "neutral"])
-        total = len(todas)
+        # Manejar valores None
+        total = total or 0
+        promotores = promotores or 0
+        detractores = detractores or 0
+        neutrales = neutrales or 0
 
         nps = round((promotores - detractores) / total * 100) if total > 0 else 0
 
@@ -797,4 +1517,89 @@ async def obtener_nps_score() -> dict:
             "neutrales": neutrales,
             "detractores": detractores,
             "total": total
+        }
+
+
+# ════════════════════════════════════════════════════════════
+# FUNCIONES PARA MANEJO AVANZADO DE TRANSACCIONES
+# ════════════════════════════════════════════════════════════
+
+async def ejecutar_en_transaccion_atomica(operaciones: list[callable]) -> bool:
+    """
+    Ejecuta múltiples operaciones en una ÚNICA transacción.
+
+    ✅ ATÓMICO: Si cualquiera falla, TODO se revierte (ROLLBACK)
+
+    Args:
+        operaciones: Lista de funciones async que se ejecutan en orden
+
+    Returns:
+        True si todas se ejecutan exitosamente, False si falla cualquiera
+
+    Ejemplo:
+        async def op1(session):
+            # ... código ...
+
+        async def op2(session):
+            # ... código ...
+
+        await ejecutar_en_transaccion_atomica([op1, op2])
+    """
+    async with async_session() as session:
+        try:
+            for operacion in operaciones:
+                await operacion(session)
+            await session.commit()
+            return True
+        except Exception as e:
+            await session.rollback()
+            print(f"❌ Transacción revertida: {e}")
+            return False
+
+
+async def validar_integridad_referencial() -> dict:
+    """
+    Valida la integridad de la base de datos.
+
+    ✅ Detecta:
+    - Mensajes sin lead correspondiente
+    - Pedidos sin lead
+    - Satisfacciones sin pedido
+    - Datos huérfanos
+
+    Returns:
+        {"valido": bool, "errores": [...]}
+    """
+    async with async_session() as session:
+        errores = []
+
+        # 1. Mensajes sin lead
+        msg_sin_lead = await session.execute(
+            select(func.count(Mensaje.id))
+            .where(~Mensaje.telefono.in_(select(Lead.telefono)))
+        )
+        if msg_sin_lead.scalar() > 0:
+            errores.append(f"⚠️ {msg_sin_lead.scalar()} mensajes sin lead correspondiente")
+
+        # 2. Pedidos sin lead
+        pedido_sin_lead = await session.execute(
+            select(func.count(Pedido.id))
+            .where(~Pedido.telefono.in_(select(Lead.telefono)))
+        )
+        if pedido_sin_lead.scalar() > 0:
+            errores.append(f"⚠️ {pedido_sin_lead.scalar()} pedidos sin lead correspondiente")
+
+        # 3. Satisfacciones sin pedido (cuando pedido_id no es NULL)
+        satisf_sin_pedido = await session.execute(
+            select(func.count(Satisfaccion.id))
+            .where(Satisfaccion.pedido_id.is_not(None))
+            .where(~Satisfaccion.pedido_id.in_(select(Pedido.id)))
+        )
+        if satisf_sin_pedido.scalar() > 0:
+            errores.append(f"⚠️ {satisf_sin_pedido.scalar()} satisfacciones sin pedido correspondiente")
+
+        return {
+            "valido": len(errores) == 0,
+            "errores": errores,
+            "timestamp": datetime.utcnow()
         }

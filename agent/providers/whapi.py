@@ -174,6 +174,7 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 mensaje_id=mensaje_id,
                 es_propio=False,
                 payload=contexto_payload,  # Metadata del anuncio
+                imagen_url=imagen_url,  # URL de imagen si aplica
             ))
             logger.info(f"📨 Mensaje parseado: {telefono} → {texto[:60]}...")
 

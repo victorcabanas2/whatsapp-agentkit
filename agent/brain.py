@@ -150,19 +150,20 @@ async def obtener_contexto_stock() -> str:
         return ""
 
 
-async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
+async def generar_respuesta(mensaje: str, historial: list[dict], imagen_url: str | None = None) -> str:
     """
     Genera una respuesta usando Claude API.
 
     Args:
         mensaje: El mensaje nuevo del usuario
         historial: Lista de mensajes anteriores [{"role": "user/assistant", "content": "..."}]
+        imagen_url: URL de imagen si el usuario envió una imagen
 
     Returns:
         La respuesta generada por Claude
     """
     # Validar entrada
-    if not mensaje or len(mensaje.strip()) < 2:
+    if (not mensaje or len(mensaje.strip()) < 2) and not imagen_url:
         return obtener_mensaje_fallback()
 
     # Cargar system prompt
@@ -190,14 +191,44 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
             "content": msg.get("content", "")
         })
 
+    # Construir content block para el mensaje actual
+    if imagen_url:
+        # Si hay imagen, crear un content block con imagen + texto
+        content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "url",
+                    "url": imagen_url
+                }
+            }
+        ]
+        # Agregar el texto del mensaje si existe
+        if mensaje and mensaje.strip():
+            content.append({
+                "type": "text",
+                "text": mensaje
+            })
+        else:
+            # Si no hay texto, pedir que identifique el producto
+            content.append({
+                "type": "text",
+                "text": "¿Qué producto es este? Identifica y dame todos los detalles."
+            })
+
+        logger.info(f"📸 Imagen detectada: {imagen_url[:60]}...")
+    else:
+        # Solo texto
+        content = mensaje
+
     # Agregar el mensaje actual
     mensajes.append({
         "role": "user",
-        "content": mensaje
+        "content": content
     })
 
     try:
-        logger.debug(f"Llamando a Claude con {len(mensajes)} mensajes en contexto")
+        logger.debug(f"Llamando a Claude con {len(mensajes)} mensajes en contexto (imagen: {'sí' if imagen_url else 'no'})")
 
         response = await client.messages.create(
             model="claude-sonnet-4-6",
