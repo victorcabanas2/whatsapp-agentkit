@@ -1073,8 +1073,13 @@ async def admin_dashboard(pwd: str = ""):
 @app.get("/api/admin/stats")
 async def admin_stats():
     """Estadísticas generales."""
-    from agent.admin_api import obtener_stats
-    return await obtener_stats()
+    try:
+        from agent.admin_api import obtener_stats
+        stats = await obtener_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Error en admin_stats: {e}", exc_info=True)
+        return {"error": str(e), "total_leads": 0, "leads_hoy": 0, "hot_leads": 0, "conversion_pct": 0, "pedidos_totales": 0, "pedidos_hoy": 0, "pedidos_pendientes": 0, "sin_respuesta_2h": 0}
 
 
 @app.get("/api/admin/leads")
