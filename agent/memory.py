@@ -20,7 +20,7 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import String, Text, DateTime, select, Integer, desc, Boolean, ForeignKey, CheckConstraint, Index, func, and_, delete
+from sqlalchemy import String, Text, DateTime, select, Integer, desc, Boolean, ForeignKey, CheckConstraint, Index, func, and_, delete, text
 from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv
 from datetime import timedelta
@@ -97,7 +97,7 @@ async_session = async_sessionmaker(
 async def enable_sqlite_foreign_keys():
     """Habilita Foreign Keys en SQLite."""
     async with engine.begin() as conn:
-        await conn.execute("PRAGMA foreign_keys = ON")
+        await conn.execute(text("PRAGMA foreign_keys = ON"))
 
 
 class Base(DeclarativeBase):
@@ -279,14 +279,14 @@ async def inicializar_db():
     async with engine.begin() as conn:
         # Habilitar Foreign Keys en SQLite
         if "sqlite" in DATABASE_URL:
-            await conn.execute("PRAGMA foreign_keys = ON")
+            await conn.execute(text("PRAGMA foreign_keys = ON"))
 
         # Crear todas las tablas
         await conn.run_sync(Base.metadata.create_all)
 
         # Verificar que las FK estén habilitadas
         if "sqlite" in DATABASE_URL:
-            result = await conn.execute("PRAGMA foreign_keys")
+            result = await conn.execute(text("PRAGMA foreign_keys"))
             fk_enabled = (await result.fetchone())[0] == 1
             if fk_enabled:
                 logger.info("✅ Foreign Keys habilitadas en SQLite")
