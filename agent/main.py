@@ -848,6 +848,10 @@ def get_dashboard_html():
             <h2>📥 Clientes Importados del Excel</h2>
 
             <div style="background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <div class="form-group">
+                    <label>Archivo Excel (.xlsx):</label>
+                    <input type="file" id="excel-archivo" accept=".xlsx">
+                </div>
                 <button onclick="importarExcel()" style="background: #10b981; margin-right: 10px;">📥 Importar desde Excel</button>
                 <div id="import-resultado" style="margin-top: 10px;"></div>
             </div>
@@ -1059,10 +1063,18 @@ def get_dashboard_html():
         }
 
         async function importarExcel() {
+            const archivoInput = document.getElementById('excel-archivo');
+            if (!archivoInput.files || archivoInput.files.length === 0) {
+                alert('Carga un archivo Excel');
+                return;
+            }
             if (!confirm('¿Importar clientes desde el archivo Excel?')) return;
 
             document.getElementById('import-resultado').innerText = 'Importando...';
-            const res = await fetch('/api/admin/importar-excel', {method: 'POST'});
+            const formData = new FormData();
+            formData.append('archivo', archivoInput.files[0]);
+
+            const res = await fetch('/api/admin/importar-excel', {method: 'POST', body: formData});
             const data = await res.json();
 
             if (data.error) {
@@ -1279,18 +1291,33 @@ async def admin_liberar_control(telefono: str = ""):
 
 
 @app.post("/api/admin/importar-excel")
-async def admin_importar_excel():
+async def admin_importar_excel(request: Request):
     """
-    Importa clientes desde el archivo Excel default.
-    Archivo: knowledge/clientes rebody importado.xlsx
+    Importa clientes desde archivo Excel cargado.
 
     Returns:
         {"exitosos": int, "errores": int, "total": int, ...}
     """
     try:
-        from agent.excel_parser import importar_clientes_de_archivo_default
-        resultado = await importar_clientes_de_archivo_default()
-        return resultado
+        import tempfile
+        from agent.excel_parser import cargar_clientes_desde_excel
+
+        form = await request.form()
+        archivo = form.get('archivo')
+        if not archivo:
+            return {"error": "Archivo requerido", "exitosos": 0, "errores": 0, "duplicados": 0}
+
+        contenido = await archivo.read()
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+            tmp.write(contenido)
+            tmp_path = tmp.name
+
+        try:
+            resultado = await cargar_clientes_desde_excel(tmp_path)
+            return resultado
+        finally:
+            import os
+            os.unlink(tmp_path)
     except Exception as e:
         logger.error(f"Error importando Excel: {e}", exc_info=True)
         return {"error": str(e), "exitosos": 0, "errores": 0, "duplicados": 0}
