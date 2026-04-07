@@ -287,11 +287,11 @@ async def inicializar_db():
         # Verificar que las FK estén habilitadas
         if "sqlite" in DATABASE_URL:
             result = await conn.execute(text("PRAGMA foreign_keys"))
-            fk_enabled = (await result.fetchone())[0] == 1
-            if fk_enabled:
+            row = result.fetchone()
+            if row and row[0] == 1:
                 logger.info("✅ Foreign Keys habilitadas en SQLite")
             else:
-                logger.error("❌ Foreign Keys NO habilitadas en SQLite")
+                logger.warning("⚠️ Foreign Keys podrían no estar habilitadas en SQLite")
 
 
 # ════════════════════════════════════════════════════════════
