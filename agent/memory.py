@@ -72,7 +72,7 @@ class DataConsistencyError(AgentKitError):
     pass
 
 # Configuración de base de datos
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./agentkit.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:////app/data/agentkit.db")
 
 # Si es PostgreSQL en producción, ajustar el esquema de URL
 if DATABASE_URL.startswith("postgresql://"):
