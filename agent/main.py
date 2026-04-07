@@ -1275,7 +1275,23 @@ async def admin_enviar_masivo(request: Request):
         imagen_base64 = None
         if imagen_file:
             imagen_bytes = await imagen_file.read()
-            imagen_base64 = base64.b64encode(imagen_bytes).decode()
+            imagen_base64_raw = base64.b64encode(imagen_bytes).decode()
+
+            # Detectar MIME type del nombre del archivo
+            filename = imagen_file.filename.lower()
+            if filename.endswith('.png'):
+                mime_type = 'image/png'
+            elif filename.endswith('.jpg') or filename.endswith('.jpeg'):
+                mime_type = 'image/jpeg'
+            elif filename.endswith('.gif'):
+                mime_type = 'image/gif'
+            elif filename.endswith('.webp'):
+                mime_type = 'image/webp'
+            else:
+                mime_type = 'image/jpeg'  # default
+
+            # Agregar prefijo data: para que el proveedor reconozca como base64 con MIME
+            imagen_base64 = f"data:{mime_type};base64,{imagen_base64_raw}"
 
         resultado = await enviar_broadcast(mensaje, imagen_base64, proveedor)
         return resultado
@@ -1304,7 +1320,23 @@ async def admin_enviar_imagen(request: Request):
             return {"exito": False, "mensaje": "Teléfono e imagen son requeridos"}
 
         imagen_bytes = await imagen_file.read()
-        imagen_base64 = base64.b64encode(imagen_bytes).decode()
+        imagen_base64_raw = base64.b64encode(imagen_bytes).decode()
+
+        # Detectar MIME type del nombre del archivo
+        filename = imagen_file.filename.lower()
+        if filename.endswith('.png'):
+            mime_type = 'image/png'
+        elif filename.endswith('.jpg') or filename.endswith('.jpeg'):
+            mime_type = 'image/jpeg'
+        elif filename.endswith('.gif'):
+            mime_type = 'image/gif'
+        elif filename.endswith('.webp'):
+            mime_type = 'image/webp'
+        else:
+            mime_type = 'image/jpeg'  # default
+
+        # Agregar prefijo data: para que el proveedor reconozca como base64 con MIME
+        imagen_base64 = f"data:{mime_type};base64,{imagen_base64_raw}"
 
         exito = await proveedor.enviar_imagen(telefono, imagen_base64, caption)
         return {
