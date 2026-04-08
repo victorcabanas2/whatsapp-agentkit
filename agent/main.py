@@ -265,6 +265,16 @@ async def lifespan(app: FastAPI):
     await inicializar_db()
     logger.info("✓ Base de datos inicializada")
 
+    # Sincronizar MUTED_CHATS desde BD (chats pausados)
+    async with async_session() as session:
+        query = select(Lead).where(Lead.en_manos_humanas == True)
+        result = await session.execute(query)
+        pausados = result.scalars().all()
+        for lead in pausados:
+            MUTED_CHATS.add(lead.telefono)
+        if pausados:
+            logger.info(f"✓ Sincronizados {len(pausados)} chats pausados desde BD")
+
     # Inicializar scheduler de seguimientos
     inicializar_scheduler()
     logger.info("✓ Scheduler de seguimientos iniciado")
@@ -1336,20 +1346,48 @@ async def admin_sin_respuesta(horas: int = 2):
 
 @app.get("/api/admin/chat-status")
 async def get_chat_status(telefono: str):
-    """Retorna si un chat está bajo control de admin o bot."""
-    estado = "admin" if telefono in MUTED_CHATS else "bot"
-    return {"telefono": telefono, "control": estado, "muted": telefono in MUTED_CHATS}
+    """Retorna si un chat está bajo control de admin o bot (desde BD)."""
+    try:
+        lead = await obtener_lead(telefono)
+        if not lead:
+            return {"telefono": telefono, "control": "desconocido", "en_manos_humanas": False}
+
+        estado = "admin" if lead.en_manos_humanas else "bot"
+        return {"telefono": telefono, "control": estado, "en_manos_humanas": lead.en_manos_humanas}
+    except Exception as e:
+        logger.error(f"Error en get_chat_status: {e}")
+        return {"telefono": telefono, "control": "error", "en_manos_humanas": False}
 
 
 @app.post("/api/admin/toggle-control")
 async def toggle_control(telefono: str):
-    """Toggle: silencia/reactiva un chat."""
-    if telefono in MUTED_CHATS:
-        MUTED_CHATS.discard(telefono)
-        return {"telefono": telefono, "control": "bot", "action": "reactivado"}
-    else:
-        MUTED_CHATS.add(telefono)
-        return {"telefono": telefono, "control": "admin", "action": "silenciado"}
+    """Toggle: silencia/reactiva un chat guardando en BD."""
+    try:
+        lead = await obtener_lead(telefono)
+        if not lead:
+            return {"error": "Lead no encontrado", "telefono": telefono}
+
+        if lead.en_manos_humanas:
+            # Reactivar bot
+            from agent.memory import liberar_control
+            exito = await liberar_control(telefono)
+            if exito:
+                MUTED_CHATS.discard(telefono)
+                logger.info(f"🟢 Bot reactivado para {telefono}")
+                return {"telefono": telefono, "control": "bot", "action": "reactivado", "exito": True}
+        else:
+            # Pausar bot
+            from agent.memory import tomar_control
+            exito = await tomar_control(telefono)
+            if exito:
+                MUTED_CHATS.add(telefono)
+                logger.info(f"🔴 Bot pausado para {telefono}")
+                return {"telefono": telefono, "control": "admin", "action": "silenciado", "exito": True}
+
+        return {"error": "No se pudo cambiar estado", "telefono": telefono}
+    except Exception as e:
+        logger.error(f"Error en toggle_control: {e}", exc_info=True)
+        return {"error": str(e), "telefono": telefono}
 
 
 @app.post("/api/admin/enviar-masivo")
@@ -1491,6 +1529,10 @@ async def admin_tomar_control(telefono: str = ""):
     try:
         from agent.memory import tomar_control
         exito = await tomar_control(telefono)
+        if exito:
+            # Caché en memoria para respuesta rápida
+            MUTED_CHATS.add(telefono)
+            logger.info(f"✓ Bot pausado para {telefono} (en manos humanas)")
         return {
             "exito": exito,
             "mensaje": "Bot pausado - Humano en control" if exito else "No se pudo pausar"
@@ -1517,6 +1559,10 @@ async def admin_liberar_control(telefono: str = ""):
     try:
         from agent.memory import liberar_control
         exito = await liberar_control(telefono)
+        if exito:
+            # Remover de caché en memoria
+            MUTED_CHATS.discard(telefono)
+            logger.info(f"✓ Bot reactivado para {telefono} (bot en control)")
         return {
             "exito": exito,
             "mensaje": "Bot reactivado" if exito else "No se pudo reactivar"
