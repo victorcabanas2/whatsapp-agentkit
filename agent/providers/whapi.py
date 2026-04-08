@@ -236,7 +236,7 @@ class ProveedorWhapi(ProveedorWhatsApp):
         Envía un mensaje de texto via Whapi.cloud.
 
         Args:
-            telefono: Número en formato internacional (sin + al inicio)
+            telefono: Número en formato local (ej: 0986147509) o internacional (ej: 595986147509)
             mensaje: Texto a enviar
 
         Returns:
@@ -246,8 +246,17 @@ class ProveedorWhapi(ProveedorWhatsApp):
             logger.warning("WHAPI_TOKEN no configurado — mensaje no enviado")
             return False
 
-        # Whapi requiere el teléfono sin caracteres especiales
+        # Whapi requiere el teléfono sin caracteres especiales y en formato internacional
         telefono_limpio = str(telefono).replace("+", "").replace(" ", "")
+
+        # Convertir de formato local (0986...) a internacional (595986...)
+        if telefono_limpio.startswith("0"):
+            # Reemplazar 0 inicial con código país Paraguay (595)
+            telefono_limpio = "595" + telefono_limpio[1:]
+            logger.debug(f"Convertido a formato internacional: {telefono_limpio}")
+        elif not telefono_limpio.startswith("595"):
+            # Si no empieza con 595 y tampoco con 0, asumir que ya es internacional
+            logger.debug(f"Número ya en formato internacional: {telefono_limpio}")
 
         headers = {
             "Authorization": f"Bearer {self.token}",
