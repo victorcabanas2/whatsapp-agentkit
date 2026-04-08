@@ -7,6 +7,7 @@ Lee el system prompt de prompts.yaml y genera respuestas usando Claude API.
 """
 
 import os
+import json
 import yaml
 import logging
 from anthropic import AsyncAnthropic
@@ -34,11 +35,44 @@ def cargar_config_prompts() -> dict:
         return {}
 
 
+def cargar_stock_actual() -> str:
+    """Lee el stock actual del archivo JSON y lo formatea para el prompt."""
+    try:
+        with open("knowledge/stock_actual.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        stock_texto = "\n  STOCK ACTUAL (EN VIVO, actualizado automáticamente):\n"
+
+        for producto in data.get("productos", {}).values():
+            nombre = producto.get("nombre", "Desconocido")
+            stock = producto.get("stock", 0)
+            disponible = producto.get("disponible", False)
+
+            if disponible:
+                stock_texto += f"  {nombre}: {stock} unidades ✅\n"
+            else:
+                stock_texto += f"  {nombre}: AGOTADO ❌\n"
+
+        return stock_texto
+    except Exception as e:
+        logger.warning(f"Error leyendo stock: {e}")
+        return ""
+
+
 def cargar_system_prompt() -> str:
-    """Retorna el system prompt desde config/prompts.yaml."""
+    """Retorna el system prompt desde config/prompts.yaml + stock dinámico."""
     config = cargar_config_prompts()
     prompt = config.get("system_prompt", "Eres un asistente útil. Responde en español.")
-    logger.debug(f"✓ Prompt cargado (primer 100 chars): {prompt[:100]}...")
+
+    # Agregar stock actual dinámico
+    stock_dinamico = cargar_stock_actual()
+    if stock_dinamico:
+        prompt = prompt.replace(
+            "STOCK ACTUAL (actualizado cada 5 minutos):",
+            stock_dinamico.strip()
+        )
+
+    logger.debug(f"✓ Prompt cargado con stock en vivo")
     return prompt
 
 
