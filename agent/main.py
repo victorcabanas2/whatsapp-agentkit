@@ -361,7 +361,7 @@ async def webhook_handler(request: Request):
                 es_nuevo_lead = (datetime.utcnow() - lead.primer_contacto).total_seconds() < 60  # Hace menos de 1 min
 
                 # Obtener historial anterior (sin el mensaje actual)
-                historial = await obtener_historial(msg.telefono)
+                historial = await obtener_historial(msg.telefono, limite=100)
 
                 # Si el mensaje viene de un anuncio (button/interactive/referral),
                 # agregar contexto al inicio del mensaje para que Claude sepa el producto
