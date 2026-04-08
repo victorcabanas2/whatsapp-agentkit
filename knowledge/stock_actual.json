@@ -112,6 +112,41 @@
       "stock": 3,
       "disponible": true,
       "timestamp": "2026-04-08T12:00:00"
+    },
+    "TF0004349-1A20": {
+      "id": "TF0004349-1A20",
+      "nombre": "TheraFace Mask Glo",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "RT0004289-1A10": {
+      "id": "RT0004289-1A10",
+      "nombre": "ThermBack LED",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "TB02756-01": {
+      "id": "TB02756-01",
+      "nombre": "Recovery Pulse Arm M",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "TB03778-01": {
+      "id": "TB03778-01",
+      "nombre": "Recovery Therm Cube",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "SM0004081-1A30": {
+      "id": "SM0004081-1A30",
+      "nombre": "SleepMask",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-08T12:00:00"
     }
   }
 }

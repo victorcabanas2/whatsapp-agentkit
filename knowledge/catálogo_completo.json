@@ -709,5 +709,110 @@
     "zona_corporal": "Pantorrilla",
     "duracion_sesion": "30-45 minutos",
     "nota_tamaño": "Medium es tamaño estándar. Verifica que coincida con tu circumferencia de pantorrilla."
+  },
+  "THERAFACE_MASK_GLO": {
+    "product_id": "TF0004349-1A20",
+    "nombre": "TheraFace Mask Glo",
+    "url": "https://www.rebody.com.py/products/theraface-mask-glo",
+    "precio": "3.490.000 Gs",
+    "categoria": "Skincare",
+    "especificaciones": [
+      "Máscara LED grado médico",
+      "Versión Glo mejorada",
+      "Luces LED avanzadas",
+      "Terapias múltiples",
+      "Rejuvenecimiento facial profesional"
+    ],
+    "beneficios": [
+      "Reduce arrugas visiblemente",
+      "Elimina manchas",
+      "Reafirma piel profundamente",
+      "Tecnología grado médico mejorada",
+      "Experiencia spa en casa"
+    ]
+  },
+  "THERMBACK_LED": {
+    "product_id": "RT0004289-1A10",
+    "nombre": "ThermBack LED",
+    "url": "https://www.rebody.com.py/products/thermback-led",
+    "precio": "3.249.000 Gs",
+    "categoria": "Recuperación",
+    "especificaciones": [
+      "Espalda térmica con LED",
+      "Calor + luz infrarroja",
+      "Alivio de dolor espalda",
+      "Recuperación muscular",
+      "Tecnología térmica avanzada"
+    ],
+    "beneficios": [
+      "Alivia dolor de espalda",
+      "Recuperación muscular profunda",
+      "Calor terapéutico + LED",
+      "Ideal para dolor crónico",
+      "Uso profesional y casero"
+    ]
+  },
+  "RECOVERY_PULSE_ARM": {
+    "product_id": "TB02756-01",
+    "nombre": "Recovery Pulse Arm M",
+    "url": "https://www.rebody.com.py/products/recovery-pulse-arm-medium",
+    "precio": "1.990.000 Gs",
+    "categoria": "Compresión",
+    "especificaciones": [
+      "Manga de compresión para brazo",
+      "Tamaño Medium",
+      "Compresión neumática",
+      "Batería recargable",
+      "Control de presión"
+    ],
+    "beneficios": [
+      "Compresión enfocada en brazo",
+      "Recuperación post-entreno",
+      "Reduce dolor y tensión",
+      "Mejora circulación brazo",
+      "Ideal para atletas de brazo/hombro"
+    ]
+  },
+  "RECOVERY_THERM_CUBE": {
+    "product_id": "TB03778-01",
+    "nombre": "Recovery Therm Cube",
+    "url": "https://www.rebody.com.py/products/recovery-therm-cube",
+    "precio": "1.449.000 Gs",
+    "categoria": "Recuperación",
+    "especificaciones": [
+      "Cubo de terapia térmica",
+      "Portátil y compacto",
+      "Control de temperatura",
+      "Múltiples usos",
+      "Tecnología térmica portátil"
+    ],
+    "beneficios": [
+      "Terapia térmica portátil",
+      "Alivio localizado de dolor",
+      "Fácil de usar",
+      "Recuperación rápida",
+      "Ideal para viajes"
+    ]
+  },
+  "SLEEPMASK": {
+    "product_id": "SM0004081-1A30",
+    "nombre": "SleepMask",
+    "url": "https://www.rebody.com.py/products/sleepmask",
+    "precio": "1.149.000 Gs",
+    "categoria": "Wearables",
+    "especificaciones": [
+      "Máscara de sueño inteligente",
+      "Monitoreo de sueño",
+      "Luz roja para sueño",
+      "Cómoda y suave",
+      "Batería larga duración"
+    ],
+    "beneficios": [
+      "Mejora calidad del sueño",
+      "Monitoreo de fases de sueño",
+      "Luz roja terapéutica",
+      "Descanso profundo",
+      "Ideal para dormir mejor"
+    ]
   }
 }
