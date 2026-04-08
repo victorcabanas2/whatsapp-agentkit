@@ -1,0 +1,117 @@
+{
+  "ultima_actualizacion": "2026-04-08T12:00:00",
+  "productos": {
+    "9146830258434": {
+      "id": "9146830258434",
+      "nombre": "WHOOP LIFE MG",
+      "stock": 5,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9146847002882": {
+      "id": "9146847002882",
+      "nombre": "WHOOP PEAK 5.0",
+      "stock": 8,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9146858832130": {
+      "id": "9146858832130",
+      "nombre": "WHOOP ONE 5.0",
+      "stock": 12,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9157817336066": {
+      "id": "9157817336066",
+      "nombre": "Theragun PRO Plus",
+      "stock": 3,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9157820449026": {
+      "id": "9157820449026",
+      "nombre": "Theragun Mini 3.0",
+      "stock": 15,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9204379222274": {
+      "id": "9204379222274",
+      "nombre": "Theragun Sense",
+      "stock": 6,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9157822185730": {
+      "id": "9157822185730",
+      "nombre": "JetBoots Prime",
+      "stock": 4,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9200281288962": {
+      "id": "9200281288962",
+      "nombre": "JetBoots Pro Plus",
+      "stock": 2,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9157826216194": {
+      "id": "9157826216194",
+      "nombre": "TheraFace PRO",
+      "stock": 7,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9157826838786": {
+      "id": "9157826838786",
+      "nombre": "TheraFace Mask",
+      "stock": 1,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9157832081666": {
+      "id": "9157832081666",
+      "nombre": "TheraFace Depuffing Wand",
+      "stock": 20,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9157888049410": {
+      "id": "9157888049410",
+      "nombre": "SmartGoggles 2.0",
+      "stock": 9,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9204380795138": {
+      "id": "9204380795138",
+      "nombre": "WaveSolo",
+      "stock": 18,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9309411606786": {
+      "id": "9309411606786",
+      "nombre": "FOREO FAQ 211 (Cuello)",
+      "stock": 6,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9309413245186": {
+      "id": "9309413245186",
+      "nombre": "FOREO FAQ 221 (Manos)",
+      "stock": 5,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    },
+    "9316931174658": {
+      "id": "9316931174658",
+      "nombre": "Calf Sleeve",
+      "stock": 3,
+      "disponible": true,
+      "timestamp": "2026-04-08T12:00:00"
+    }
+  }
+}
