@@ -11,6 +11,7 @@ Servidor principal del agente Belén de Rebody.
 
 import os
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, HTTPException, Cookie
@@ -350,6 +351,9 @@ async def webhook_handler(request: Request):
 
         # Procesar cada mensaje
         for msg in mensajes:
+            # Esperar 5 segundos para evitar responder mensajes individuales al mismo tiempo
+            await asyncio.sleep(5)
+
             # Ignorar mensajes propios
             if msg.es_propio:
                 logger.debug(f"Ignorando mensaje propio de {msg.telefono}")
