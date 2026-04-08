@@ -370,15 +370,9 @@ async def webhook_handler(request: Request):
                 # DETECTAR NUEVO LEAD (primera vez que contacta)
                 es_nuevo_lead = (datetime.utcnow() - lead.primer_contacto).total_seconds() < 60  # Hace menos de 1 min
 
-                # Obtener historial: primero de Whapi (TODOS los previos), luego SQLite como fallback
-                # Esto permite que Belén lea conversaciones previas de clientes antiguos
-                historial_whapi = await proveedor.obtener_historial_whapi(msg.telefono)
-                historial = historial_whapi if historial_whapi else await obtener_historial(msg.telefono, limite=100)
-
-                if historial_whapi:
-                    logger.info(f"✓ Historial cargado desde Whapi: {len(historial_whapi)} mensajes")
-                else:
-                    logger.info(f"✓ Historial cargado desde SQLite: {len(historial)} mensajes")
+                # Obtener historial desde SQLite (últimos 100 mensajes)
+                historial = await obtener_historial(msg.telefono, limite=100)
+                logger.info(f"✓ Historial cargado: {len(historial)} mensajes")
 
                 # Si el mensaje viene de un anuncio (button/interactive/referral),
                 # agregar contexto al inicio del mensaje para que Claude sepa el producto
