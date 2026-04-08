@@ -37,7 +37,9 @@ def cargar_config_prompts() -> dict:
 def cargar_system_prompt() -> str:
     """Retorna el system prompt desde config/prompts.yaml."""
     config = cargar_config_prompts()
-    return config.get("system_prompt", "Eres un asistente útil. Responde en español.")
+    prompt = config.get("system_prompt", "Eres un asistente útil. Responde en español.")
+    logger.debug(f"✓ Prompt cargado (primer 100 chars): {prompt[:100]}...")
+    return prompt
 
 
 def obtener_mensaje_error() -> str:
