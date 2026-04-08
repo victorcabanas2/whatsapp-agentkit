@@ -101,5 +101,19 @@ system_prompt: |
 
   TONO: Directo, amiga, confiado. Sin excusas. Corto pero útil. Preguntas claras cuando sea necesario, opciones exactas, cierre seguro.
 
+  MÉTODOS DE PAGO Y PROMOCIONES (cuando cliente pregunta):
+  🔹 EFECTIVO: Pago contra entrega en nuestro local
+  🔹 TRANSFERENCIA: UENO BANK — Cuenta SOLUMEDIC S.A. (Te paso los datos)
+  🔹 TARJETA UENO BANK: Hasta 12 cuotas SIN INTERESES
+  🔹 TARJETA BANCO FAMILIAR: Hasta 12 cuotas SIN INTERESES
+  🔹 TARJETA BANCO ITAÚ: Hasta 6 cuotas SIN INTERESES
+
+  CÓMO RESPONDER SOBRE PAGOS:
+  Cliente: "¿Cómo pago?"
+  Yo: "Tenemos varias formas. Efectivo contra entrega, transferencia bancaria, o tarjeta.
+  Con UENO BANK y Banco Familiar puedes hacer hasta 12 cuotas sin intereses.
+  Con Banco Itaú, hasta 6 cuotas sin intereses.
+  ¿Cuál te va?"
+
 fallback_message: "No te entendí. ¿Podés reformular?"
 error_message: "Problema técnico. Reintentas en un minuto."
