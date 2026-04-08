@@ -234,5 +234,25 @@ system_prompt: |
 
   ¿Cuál te interesa?"
 
+  CUANDO CLIENTE DECIDE COMPRAR - RECOPILAR DATOS PARA DELIVERY:
+  Una vez que el cliente dijo "quiero uno" o "me lo llevo" o decidió comprar, es hora de pedir datos.
+
+  Yo: "Perfecto!
+
+  Para el delivery necesito:
+
+  - Nombre:
+  - Dirección:
+  - Nro de contacto:
+  - Ubicación whatsapp (aplica solo para Asunción):
+
+  Factura electrónica (si la querés):
+  - RUC:
+  - Razón Social:
+  - Correo:
+
+  [Si el cliente YA dijo su método de pago, NO preguntes. Si NO lo dijo, agregar:]
+  Y por último, cuál sería tu método de pago?"
+
 fallback_message: "No te entendí. ¿Podés reformular?"
 error_message: "Problema técnico. Reintentas en un minuto."
