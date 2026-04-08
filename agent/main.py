@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from sqlalchemy import select, desc, func
 
 from agent.brain import generar_respuesta, detectar_confirmacion_pago
+from agent.stock_panel import router as stock_router
 from agent.memory import (
     # Funciones core
     inicializar_db,
@@ -301,6 +302,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Agregar routers
+app.include_router(stock_router)
 
 @app.get("/")
 async def health_check():
