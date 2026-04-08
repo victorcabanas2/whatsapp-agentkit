@@ -1,0 +1,713 @@
+{
+  "WHOOP_LIFE_MG": {
+    "product_id": "9146830258434",
+    "nombre": "WHOOP LIFE MG",
+    "url": "https://www.rebody.com.py/products/whoop-life-mg",
+    "precio": "4.215.000 Gs",
+    "categoria": "Wearables",
+    "especificaciones": [
+      "Banda de salud y rendimiento",
+      "Monitoreo avanzado: frecuencia cardíaca, sueño, recuperación, estrés",
+      "Análisis deportivo profesional",
+      "Métricas ultra detalladas",
+      "Acceso a coaching",
+      "Banda de máxima calidad",
+      "Acceso a todas las bandas premium (Luxe, Carbon, etc)",
+      "Batería 5 días"
+    ],
+    "beneficios": [
+      "Control total sobre recuperación y rendimiento",
+      "Análisis profesional para atletas",
+      "Acceso exclusivo a coaching",
+      "Máxima personalización de bandas",
+      "Preferido de atletas serios y profesionales"
+    ],
+    "como_se_usa": "Se usa en la muñeca como una banda inteligente. Monitorea constantemente tu salud y proporciona datos en tiempo real a través de la app móvil.",
+    "zona_corporal": "Muñeca",
+    "diferencias_whoop": "Versión Premium: Monitoreo PRO + Coaching + Bandas exclusivas. Para atletas serios."
+  },
+  "WHOOP_PEAK_5_0": {
+    "product_id": "9146847002882",
+    "nombre": "WHOOP PEAK 5.0",
+    "url": "https://www.rebody.com.py/products/whoop-peak-5-0",
+    "precio": "3.150.000 Gs",
+    "categoria": "Wearables",
+    "especificaciones": [
+      "Banda de salud y rendimiento",
+      "Monitoreo: frecuencia cardíaca, sueño, recuperación, estrés",
+      "MÁS opciones de bandas intercambiables",
+      "Banda de mejor calidad (SuperKnit Luxe)",
+      "Más durabilidad y confort",
+      "Personalizable: CoreKnit, SportFlex, LeatherLuxe",
+      "Múltiples opciones de bandas",
+      "Batería 5 días",
+      "App integrada con analytics completos"
+    ],
+    "beneficios": [
+      "Mejor estética que One",
+      "Más versatilidad de accesorios",
+      "Banda premium de mejor calidad",
+      "Balance perfecto entre funcionalidad y precio",
+      "Para uso regular y deportivo"
+    ],
+    "como_se_usa": "Se usa en la muñeca como una banda inteligente. Intercambia bandas según tu estilo. App proporciona analytics completos.",
+    "zona_corporal": "Muñeca",
+    "diferencias_whoop": "Versión intermedia: Monitoreo + Bandas premium intercambiables. Para uso regular."
+  },
+  "WHOOP_ONE_5_0": {
+    "product_id": "9146858832130",
+    "nombre": "WHOOP ONE 5.0",
+    "url": "https://www.rebody.com.py/products/whoop-one-5-0",
+    "precio": "2.350.000 Gs",
+    "categoria": "Wearables",
+    "especificaciones": [
+      "Banda de salud y rendimiento",
+      "Monitoreo: frecuencia cardíaca, sueño, recuperación, estrés",
+      "Banda standard",
+      "Menos opciones de personalización que Peak y Life",
+      "Batería 5 días",
+      "App integrada con analytics completos"
+    ],
+    "beneficios": [
+      "Ideal para empezar a monitorear recuperación",
+      "Acceso a monitoreo completo sin gastar mucho",
+      "Funcionalidad esencial sin lujos",
+      "Perfecto para quienes recién se introducen en health tracking"
+    ],
+    "como_se_usa": "Se usa en la muñeca como una banda inteligente. Monitorea constantemente y proporciona datos en la app.",
+    "zona_corporal": "Muñeca",
+    "diferencias_whoop": "Versión Essential: Monitoreo básico, banda standard. Para empezar."
+  },
+  "THERAGUN_PRO_PLUS": {
+    "product_id": "9157817336066",
+    "nombre": "Theragun PRO PLUS",
+    "url": "https://www.rebody.com.py/products/theragun-pro-plus",
+    "precio": "5.799.000 Gs",
+    "categoria": "Masajeadores",
+    "especificaciones": [
+      "El más potente",
+      "Motor QuietForce QX150 (27 kg fuerza)",
+      "5 terapias en 1: percusión + calor + vibración + LED infrarrojo + app",
+      "Pantalla OLED",
+      "5 cabezales intercambiables",
+      "Brazo ajustable 4 posiciones",
+      "2 baterías (5 horas de uso)",
+      "Sensor biométrico",
+      "Recuperación profesional"
+    ],
+    "beneficios": [
+      "Lo mejor en masaje percusivo y recuperación",
+      "Múltiples terapias en un solo dispositivo",
+      "Baterías duales para uso prolongado",
+      "Sensor biométrico para feedback real",
+      "Ideal para atletas profesionales"
+    ],
+    "como_se_usa": "Usa sobre los músculos del cuerpo (espalda, cuello, brazos, piernas). El brazo ajustable te permite alcanzar cualquier zona. Elige el cabezal según la zona.",
+    "zona_corporal": "Espalda, cuello, brazos, piernas",
+    "duracion_sesion": "Variable según la zona, tipicamente 2-3 minutos por area"
+  },
+  "THERAGUN_MINI_3_0": {
+    "product_id": "9157820449026",
+    "nombre": "Theragun Mini 3.0",
+    "url": "https://www.rebody.com.py/products/theragun-mini-3-0",
+    "precio": "2.349.000 Gs",
+    "categoria": "Masajeadores",
+    "especificaciones": [
+      "Lo más compacto",
+      "3 velocidades (1750-2400 PPM)",
+      "3 cabezales diferentes",
+      "Batería 150 min",
+      "Operación silenciosa",
+      "Portátil",
+      "Ideal para viajar o bolso"
+    ],
+    "beneficios": [
+      "Perfecto para viajes y entrenamiento",
+      "Tamaño compacto, peso ligero",
+      "Operación silenciosa, discreta",
+      "Ideal para uso diario en cualquier lado",
+      "Batería duradera"
+    ],
+    "como_se_usa": "Usa sobre músculos para masaje rápido. Compacta, la llevas a cualquier lado. 3 velocidades para diferentes intensidades.",
+    "zona_corporal": "Cuello, brazos, espalda, pantorrillas",
+    "duracion_sesion": "1-2 minutos por area"
+  },
+  "JETBOOTS_PRIME": {
+    "product_id": "9157822185730",
+    "nombre": "RecoveryAir JetBoots Prime",
+    "url": "https://www.rebody.com.py/products/recoveryair-jetboots-prime",
+    "precio": "5.990.000 Gs",
+    "categoria": "Botas de Compresión",
+    "especificaciones": [
+      "Compresión neumática inalámbrica",
+      "Para piernas y muslos",
+      "4 niveles presión (25-100 mmHg)",
+      "4 cámaras aire superpuestas",
+      "Batería 180 minutos",
+      "Plegable",
+      "Incluye mochila de transporte",
+      "FDA certificado",
+      "Acelera recuperación post-entreno"
+    ],
+    "beneficios": [
+      "Compresión neumática avanzada",
+      "Reduce agujetas post-ejercicio",
+      "Mejora circulación",
+      "Ideal para atletas e intensos",
+      "Portátil y plegable",
+      "Certificación médica FDA"
+    ],
+    "como_se_usa": "Coloca las botas sobre piernas y muslos. Activa el ciclo de compresión. Típicamente 30-60 minutos. La batería dura 3 horas.",
+    "zona_corporal": "Piernas y muslos",
+    "duracion_sesion": "30-60 minutos"
+  },
+  "THERAFACE_PRO": {
+    "product_id": "9157826216194",
+    "nombre": "TheraFace PRO",
+    "url": "https://www.rebody.com.py/products/theraface-pro",
+    "precio": "3.849.000 Gs",
+    "categoria": "Skincare",
+    "especificaciones": [
+      "Todo en 1 para la cara",
+      "LED rojo/azul/infrarrojo",
+      "Microcorriente",
+      "Percusión",
+      "Limpieza",
+      "Pantalla LCD",
+      "Bluetooth",
+      "Gel conductor incluido",
+      "Batería 38 min"
+    ],
+    "beneficios": [
+      "Reafirma piel",
+      "Reduce líneas de expresión",
+      "Combate acné",
+      "Mejora textura de piel",
+      "Dispositivo multifunción para skincare serio",
+      "Fácil de usar con rutinas guiadas"
+    ],
+    "como_se_usa": "Aplica gel conductor en el rostro. Enciende el dispositivo y pasa suavemente sobre el rostro. Diferentes modos para diferentes beneficios.",
+    "zona_corporal": "Rostro",
+    "duracion_sesion": "5-10 minutos"
+  },
+  "THERAFACE_MASK": {
+    "product_id": "9157826838786",
+    "nombre": "TheraFace Mask",
+    "url": "https://www.rebody.com.py/products/theraface-mask",
+    "precio": "5.899.000 Gs",
+    "categoria": "Skincare",
+    "especificaciones": [
+      "Máscara LED grado médico",
+      "648 luces",
+      "3 terapias: roja, roja+infrarroja, azul",
+      "9 minutos de tratamiento",
+      "Masaje VibraWave en sienes",
+      "Diseño futurista",
+      "Rejuvenecimiento de nivel profesional"
+    ],
+    "beneficios": [
+      "Reduce arrugas visiblemente",
+      "Elimina manchas",
+      "Reafirma piel profundamente",
+      "Lo máximo en rejuvenecimiento facial",
+      "Tecnología grado médico",
+      "Experiencia spa en casa"
+    ],
+    "como_se_usa": "Colócate la máscara sobre el rostro. Activa el modo. Siéntate relax por 9 minutos. Las 648 luces LED hacen el trabajo.",
+    "zona_corporal": "Rostro completo",
+    "duracion_sesion": "9 minutos"
+  },
+  "THERAFACE_DEPUFFING_WAND": {
+    "product_id": "9157832081666",
+    "nombre": "TheraFace Depuffing Wand",
+    "url": "https://www.rebody.com.py/products/theraface-depuffing-wand",
+    "precio": "1.699.000 Gs",
+    "categoria": "Skincare",
+    "especificaciones": [
+      "Varita térmica",
+      "Para ojeras y bolsas bajo ojos",
+      "Frío (10°C) + calor (45°C)",
+      "Ciclo de 6 minutos",
+      "Ligero y portátil",
+      "USB-C",
+      "Lo más accesible en skintech"
+    ],
+    "beneficios": [
+      "Reduce ojeras instantáneamente",
+      "Elimina bolsas bajo los ojos",
+      "Resultado visible inmediato",
+      "Perfecto para mañana antes de salir",
+      "Ultra portátil",
+      "Precio accesible"
+    ],
+    "como_se_usa": "Usa por la mañana. Terapia frío + calor en 6 minutos. Aplica bajo los ojos suavemente. Verás resultado al instante.",
+    "zona_corporal": "Contorno de ojos",
+    "duracion_sesion": "6 minutos"
+  },
+  "SMARTGOGGLES_2_0": {
+    "product_id": "9157888049410",
+    "nombre": "SmartGoggles 2.0",
+    "url": "https://www.rebody.com.py/products/smartgoggles-2-0",
+    "precio": "2.259.000 Gs",
+    "categoria": "Wearables",
+    "especificaciones": [
+      "Gafas inteligentes",
+      "Masaje térmico",
+      "Vibración",
+      "Sensor biométrico",
+      "3 modos: relajación, alivio de migrañas, preparación para dormir",
+      "Bloqueo total de luz",
+      "Batería 180 min",
+      "Para quien pasa horas en pantalla"
+    ],
+    "beneficios": [
+      "Alivia fatiga ocular",
+      "Reduce estrés",
+      "Mejora calidad del sueño",
+      "3 programas especializados",
+      "Bloqueo total de luz para mejor descanso",
+      "Ideal para trabajadores de oficina"
+    ],
+    "como_se_usa": "Colócate las gafas. Elige modo (relajación, migraña o dormir). Siente el masaje térmico y vibración. Típicamente 15-30 minutos.",
+    "zona_corporal": "Ojos y área facial superior",
+    "duracion_sesion": "15-30 minutos"
+  },
+  "COREKNIT_BAND_5_0": {
+    "product_id": "9167726739714",
+    "nombre": "WHOOP CoreKnit Band 5.0",
+    "url": "https://www.rebody.com.py/products/whoop-coreknit-band-5-0",
+    "precio": "429.000 Gs",
+    "categoria": "Accesorios",
+    "especificaciones": [
+      "Banda de tela CoreKnit",
+      "Compatible con WHOOP 5.0",
+      "Material transpirable",
+      "Ajuste cómodo",
+      "Variedad de colores",
+      "Accesorio de reemplazo"
+    ],
+    "beneficios": [
+      "Comodidad todo el día",
+      "Material transpirable y suave",
+      "Compatibilidad con WHOOP 5.0",
+      "Cambio de estilo fácil"
+    ],
+    "como_se_usa": "Reemplaza la banda original del WHOOP. Desliza el sensor en la nueva banda. Usa como lo harías normalmente.",
+    "zona_corporal": "Muñeca",
+    "es_accesorio": true
+  },
+  "SUPERKNIT_BAND_5_0_MG": {
+    "product_id": "9167727952130",
+    "nombre": "WHOOP SuperKnit Band 5.0/MG",
+    "url": "https://www.rebody.com.py/products/whoop-superknit-band-5-0-mg",
+    "precio": "540.000 Gs",
+    "categoria": "Accesorios",
+    "especificaciones": [
+      "Banda premium SuperKnit",
+      "Material de mayor calidad",
+      "Compatible con WHOOP 5.0 y WHOOP Life MG",
+      "Súper cómoda",
+      "Variedad de colores",
+      "Accesorio de reemplazo premium"
+    ],
+    "beneficios": [
+      "Mayor durabilidad que CoreKnit",
+      "Comodidad premium",
+      "Estética mejorada",
+      "Material de alta calidad"
+    ],
+    "como_se_usa": "Reemplaza la banda original. Desliza el sensor WHOOP en la SuperKnit. Usa normalmente.",
+    "zona_corporal": "Muñeca",
+    "es_accesorio": true
+  },
+  "BICEP_BAND_5_0_MG": {
+    "product_id": "9167729819906",
+    "nombre": "WHOOP Bicep Band 5.0/MG",
+    "url": "https://www.rebody.com.py/products/whoop-bicep-band-5-0-mg",
+    "precio": "540.000 Gs",
+    "categoria": "Accesorios",
+    "especificaciones": [
+      "Banda para brazo (bíceps)",
+      "Compatible con WHOOP 5.0 y WHOOP Life MG",
+      "Alternativa a muñeca",
+      "Material transpirable",
+      "Ajuste cómodo en bíceps",
+      "Ideal para ejercicio intenso"
+    ],
+    "beneficios": [
+      "Mejor comodidad durante ejercicio",
+      "Alternativa a muñeca",
+      "Material transpirable",
+      "Ideal para deportistas intensos",
+      "Sigue monitoreando sin cambiar funcionalidad"
+    ],
+    "como_se_usa": "Desliza el sensor WHOOP en la banda Bicep. Coloca en el bíceps. Mantiene el monitoreo durante entrenamientos.",
+    "zona_corporal": "Bíceps",
+    "es_accesorio": true
+  },
+  "SPORTFLEX_BAND_5_0_MG": {
+    "product_id": "9167730114818",
+    "nombre": "WHOOP SportFlex Band 5.0/MG",
+    "url": "https://www.rebody.com.py/products/whoop-sportflex-band-5-0-mg",
+    "precio": "615.000 Gs",
+    "categoria": "Accesorios",
+    "especificaciones": [
+      "Banda deportiva SportFlex",
+      "Compatible con WHOOP 5.0 y WHOOP Life MG",
+      "Material flex para deportes",
+      "Mayor elasticidad",
+      "Transpirable",
+      "Diseño para máximo rendimiento"
+    ],
+    "beneficios": [
+      "Perfecta para deportistas",
+      "Material flexible y resistente",
+      "Mayor durabilidad en deportes",
+      "Comodidad durante movimientos intensos"
+    ],
+    "como_se_usa": "Reemplaza la banda original. Desliza el sensor en SportFlex. Ideal para entrenamientos y deportes.",
+    "zona_corporal": "Muñeca",
+    "es_accesorio": true
+  },
+  "SUPERKNIT_LUXE_BAND_5_0_MG": {
+    "product_id": "9167741518082",
+    "nombre": "WHOOP SuperKnit Luxe Band 5.0/MG",
+    "url": "https://www.rebody.com.py/products/whoop-superknit-luxe-band-5-0-mg",
+    "precio": "899.000 Gs",
+    "categoria": "Accesorios",
+    "especificaciones": [
+      "Banda de lujo SuperKnit Luxe",
+      "Material premium de máxima calidad",
+      "Compatible con WHOOP 5.0 y WHOOP Life MG",
+      "Banda por defecto en WHOOP Peak",
+      "Variedad de colores premium",
+      "Máxima comodidad"
+    ],
+    "beneficios": [
+      "Estética premium",
+      "Material de lujo",
+      "Máxima durabilidad",
+      "Included en WHOOP Peak de serie",
+      "Presencia profesional"
+    ],
+    "como_se_usa": "Banda de reemplazo premium. Desliza el sensor WHOOP. Usa como lo harías con cualquier banda.",
+    "zona_corporal": "Muñeca",
+    "es_accesorio": true
+  },
+  "LEATHERLUXE_TAPERED_BAND_5_0_MG": {
+    "product_id": "9167747186946",
+    "nombre": "WHOOP LeatherLuxe Tapered Band 5.0/MG",
+    "url": "https://www.rebody.com.py/products/whoop-leatherluxe-tapered-band-5-0-mg",
+    "precio": "1.289.000 Gs",
+    "categoria": "Accesorios",
+    "especificaciones": [
+      "Banda de cuero auténtico",
+      "Diseño tapered (estrechamiento)",
+      "Compatible con WHOOP 5.0 y WHOOP Life MG",
+      "Material cuero premium",
+      "Cierre ajustable",
+      "Estilo formal o casual"
+    ],
+    "beneficios": [
+      "Estilo elegante",
+      "Material de cuero auténtico",
+      "Cierre ajustable perfecto",
+      "Premium look",
+      "Durabilidad del cuero",
+      "Apropiada para cualquier ocasión"
+    ],
+    "como_se_usa": "Banda de lujo de cuero. Desliza sensor WHOOP. Ajusta el cierre según tu muñeca. Combina con cualquier outfit.",
+    "zona_corporal": "Muñeca",
+    "es_accesorio": true
+  },
+  "LEATHERLUXE_STRAIGHT_BAND_5_0_MG": {
+    "product_id": "9167764193538",
+    "nombre": "WHOOP LeatherLuxe Straight Band 5.0/MG",
+    "url": "https://www.rebody.com.py/products/whoop-leatherluxe-straight-band-5-0-mg",
+    "precio": "1.289.000 Gs",
+    "categoria": "Accesorios",
+    "especificaciones": [
+      "Banda de cuero auténtico",
+      "Diseño straight (recto)",
+      "Compatible con WHOOP 5.0 y WHOOP Life MG",
+      "Material cuero premium",
+      "Cierre ajustable",
+      "Estilo formal elegante"
+    ],
+    "beneficios": [
+      "Estilo formal premium",
+      "Cuero auténtico de calidad",
+      "Cierre ajustable",
+      "Look ejecutivo",
+      "Durabilidad garantizada",
+      "Versátil con cualquier estilo"
+    ],
+    "como_se_usa": "Banda de cuero de lujo. Desliza sensor WHOOP. Ajusta el cierre. Ideal para ambientes formales o ejecutivos.",
+    "zona_corporal": "Muñeca",
+    "es_accesorio": true
+  },
+  "CARGADOR_BASICO_5_0": {
+    "product_id": "9167778185474",
+    "nombre": "WHOOP Cargador Básico 5.0",
+    "url": "https://www.rebody.com.py/products/whoop-cargador-basico-5-0",
+    "precio": "315.000 Gs",
+    "categoria": "Accesorios",
+    "especificaciones": [
+      "Cargador por contacto",
+      "Compatible con WHOOP 5.0 y WHOOP Life MG",
+      "Conexión estándar",
+      "Carga rápida",
+      "Compacto"
+    ],
+    "beneficios": [
+      "Carga rápida del sensor",
+      "Accesorio esencial",
+      "Compatible con todos WHOOP 5.0",
+      "Precio accesible"
+    ],
+    "como_se_usa": "Conecta el cargador a USB. Coloca el sensor WHOOP en la base. Carga en 1-2 horas.",
+    "zona_corporal": "N/A",
+    "es_accesorio": true
+  },
+  "CARGADOR_INALAMBRICO_5_0": {
+    "product_id": "9167800008962",
+    "nombre": "WHOOP Cargador Inalámbrico 5.0",
+    "url": "https://www.rebody.com.py/products/whoop-cargador-inalambrico-5-0",
+    "precio": "0 Gs",
+    "categoria": "Accesorios",
+    "especificaciones": [
+      "Cargador inalámbrico por inducción",
+      "Compatible con WHOOP 5.0 y WHOOP Life MG",
+      "Sin cables",
+      "Carga rápida",
+      "Tecnología Qi"
+    ],
+    "beneficios": [
+      "Carga cómoda sin cables",
+      "Tecnología inalámbrica moderna",
+      "Evita desgaste de conectores",
+      "Más práctico que cargador básico"
+    ],
+    "como_se_usa": "Conecta a USB. Coloca el sensor WHOOP encima. Carga sin contacto por inducción.",
+    "zona_corporal": "N/A",
+    "es_accesorio": true
+  },
+  "HYDROSLEEVE": {
+    "product_id": "9167800336642",
+    "nombre": "WHOOP HydroSleeve",
+    "url": "https://www.rebody.com.py/products/whoop-hydrosleeve",
+    "precio": "250.000 Gs",
+    "categoria": "Accesorios",
+    "especificaciones": [
+      "Funda impermeable",
+      "Compatible con WHOOP 5.0 y WHOOP Life MG",
+      "Protección 100% agua",
+      "Diseño discreto bajo manga",
+      "Mantiene monitoreo bajo agua"
+    ],
+    "beneficios": [
+      "Usa WHOOP bajo agua",
+      "Protección total impermeable",
+      "Nada, ducha, piscina sin problemas",
+      "Discreta bajo ropa",
+      "Sigue funcionando el monitoreo"
+    ],
+    "como_se_usa": "Coloca el sensor WHOOP dentro de la HydroSleeve. Cierra herméticamente. Usa bajo el agua sin problemas.",
+    "zona_corporal": "Muñeca",
+    "es_accesorio": true
+  },
+  "ARM_SLEEVE_WHOOP": {
+    "product_id": "9167819374850",
+    "nombre": "WHOOP Arm Sleeve",
+    "url": "https://www.rebody.com.py/products/whoop-arm-sleeve",
+    "precio": "570.000 Gs",
+    "categoria": "Accesorios",
+    "especificaciones": [
+      "Manga compresión con WHOOP",
+      "Compatible con WHOOP 5.0 y WHOOP Life MG",
+      "Compresión atlética",
+      "Material transpirable",
+      "Soporte muscular"
+    ],
+    "beneficios": [
+      "Compresión + monitoreo",
+      "Soporte muscular durante deportes",
+      "Material transpirable",
+      "Mejor ajuste para ejercicio",
+      "Recuperación activa"
+    ],
+    "como_se_usa": "Coloca WHOOP en la Arm Sleeve. Usa como manga compresiva normal. Obtén monitoreo + compresión simultáneamente.",
+    "zona_corporal": "Brazo",
+    "es_accesorio": true
+  },
+  "JETBOOTS_PRO_PLUS": {
+    "product_id": "9200281288962",
+    "nombre": "Jetboots Pro Plus",
+    "url": "https://www.rebody.com.py/products/jetboots-pro-plus",
+    "precio": "9.900.000 Gs",
+    "categoria": "Botas de Compresión",
+    "especificaciones": [
+      "Lo más avanzado en recuperación",
+      "3 terapias en 1: compresión + LED infrarrojo + vibración",
+      "8 rutinas deportivas integradas (running, futbol, crossfit, etc)",
+      "Pantalla LCD",
+      "Presión 20-100 mmHg",
+      "FastFlush Technology",
+      "Batería 150-240 min",
+      "Para deportistas serios"
+    ],
+    "beneficios": [
+      "Recuperación de élite profesional",
+      "Múltiples terapias en uno",
+      "8 programas deportivos específicos",
+      "Tecnología FastFlush avanzada",
+      "Ideal para atletas de alto rendimiento"
+    ],
+    "como_se_usa": "Coloca las botas en piernas. Elige rutina deportiva según tu deporte. Activa ciclo. Relájate 30-60 minutos. Triple terapia trabaja simultáneamente.",
+    "zona_corporal": "Piernas y muslos",
+    "duracion_sesion": "30-60 minutos"
+  },
+  "THERAGUN_SENSE": {
+    "product_id": "9204379222274",
+    "nombre": "Theragun Sense",
+    "url": "https://www.rebody.com.py/products/theragun-sense",
+    "precio": "2.990.000 Gs",
+    "categoria": "Masajeadores",
+    "especificaciones": [
+      "Pantalla LCD",
+      "Rutinas guiadas paso a paso",
+      "Sensor biométrico con feedback en tiempo real",
+      "4 cabezales intercambiables",
+      "5 velocidades",
+      "Batería 120 min",
+      "Para quien quiere masaje guiado"
+    ],
+    "beneficios": [
+      "Masaje inteligente guiado",
+      "Feedback biométrico real",
+      "Pantalla LCD clara",
+      "Múltiples rutinas preestablecidas",
+      "Ideal para quienes quieren estructura"
+    ],
+    "como_se_usa": "Enciende y selecciona rutina en pantalla. Sigue las indicaciones paso a paso. El sensor biométrico ajusta automáticamente la intensidad.",
+    "zona_corporal": "Cuello, brazos, espalda, piernas",
+    "duracion_sesion": "3-5 minutos por rutina"
+  },
+  "WAVESOLO": {
+    "product_id": "9204380795138",
+    "nombre": "WaveSolo",
+    "url": "https://www.rebody.com.py/products/wavesolo",
+    "precio": "1.299.000 Gs",
+    "categoria": "Masajeadores",
+    "especificaciones": [
+      "Bola vibratoria portátil",
+      "Masaje localizado",
+      "3 niveles vibración",
+      "Silenciosa",
+      "Diámetro 8.6 cm",
+      "Alivia tensión en puntos específicos",
+      "Batería 200 min",
+      "Lo más barato para empezar recuperación"
+    ],
+    "beneficios": [
+      "Masaje portable de puntos específicos",
+      "3 intensidades de vibración",
+      "Ultra silenciosa",
+      "Larga duración de batería",
+      "Precio muy accesible",
+      "Fácil de llevar"
+    ],
+    "como_se_usa": "Coloca la bola sobre el punto que duele o está tenso. Enciende y elige nivel vibración. Presiona suavemente. Mueve en círculos.",
+    "zona_corporal": "Cualquier punto localizado",
+    "duracion_sesion": "2-3 minutos por punto"
+  },
+  "FOREO_FAQ_211": {
+    "product_id": "9309411606786",
+    "nombre": "FOREO FAQ 211 (Cuello & Escote)",
+    "url": "https://www.rebody.com.py/products/foreo-faq-211",
+    "precio": "3.900.000 Gs",
+    "categoria": "Skincare",
+    "especificaciones": [
+      "Máscara LED para cuello y escote",
+      "ESPECÍFICAMENTE para cuello (zona D)",
+      "NO para rostro",
+      "Tecnología T-Sonic",
+      "LED rojo",
+      "Microcorriente",
+      "Ultra suave en zona delicada",
+      "Flexible, se adapta a curvatura del cuello",
+      "8 minutos por sesión"
+    ],
+    "beneficios": [
+      "Reduce arrugas cuello hasta 32% en 2 semanas",
+      "Reafirma y tonifica cuello",
+      "Específica para zona delicada",
+      "Flexible y cómoda",
+      "Tecnología profesional",
+      "Visiblemente más joven"
+    ],
+    "como_se_usa": "Coloca la máscara sobre el cuello y escote. Activa por 8 minutos. La tecnología T-Sonic + LED + microcorriente hacen el trabajo. Usa 2-3 veces por semana.",
+    "zona_corporal": "Cuello, escote, clavículas",
+    "duracion_sesion": "8 minutos",
+    "nota_importante": "Esta ÚNICAMENTE para cuello y escote, NO para rostro. FAQ 221 es para manos."
+  },
+  "FOREO_FAQ_221": {
+    "product_id": "9309413245186",
+    "nombre": "FOREO FAQ 221 (Manos)",
+    "url": "https://www.rebody.com.py/products/foreo-faq-221",
+    "precio": "3.139.000 Gs",
+    "categoria": "Skincare",
+    "especificaciones": [
+      "Máscara LED para manos",
+      "Para palmas, dorso, dedos",
+      "ÚNICAMENTE para manos",
+      "NO para rostro ni cuello",
+      "Tecnología T-Sonic",
+      "LED rojo",
+      "Microcorriente adaptada manos",
+      "Rejuvenece y reafirma",
+      "Reduce manchas de edad"
+    ],
+    "beneficios": [
+      "Rejuvenece manos",
+      "Reafirma piel manos",
+      "Reduce manchas de edad",
+      "Tecnología específica para manos",
+      "Manos más jóvenes y suaves",
+      "Tratamiento profesional en casa"
+    ],
+    "como_se_usa": "Coloca ambas manos dentro de la máscara. Activa el tratamiento. Relájate mientras la tecnología T-Sonic + LED + microcorriente rejuvenecen tus manos.",
+    "zona_corporal": "Manos (palmas, dorso, dedos)",
+    "duracion_sesion": "8-10 minutos",
+    "nota_importante": "Esta es PARA MANOS. FAQ 211 es para cuello y escote. NO son intercambiables."
+  },
+  "RECOVERY_PULSE_CALF_SLEEVE": {
+    "product_id": "9316931174658",
+    "nombre": "Therabody RecoveryPulse Calf Sleeve (Medium)",
+    "url": "https://www.rebody.com.py/products/therabody-recoverypulse-calf-sleeve-medium-manga-de-compresion-para-pantorrilla",
+    "precio": "3.999.000 Gs",
+    "categoria": "Botas de Compresión",
+    "especificaciones": [
+      "Manga de compresión para pantorrilla",
+      "Tamaño Medium",
+      "Tecnología RecoveryPulse",
+      "Compresión neumática",
+      "Batería recargable",
+      "Control de presión",
+      "Fácil de poner/quitar",
+      "Portable"
+    ],
+    "beneficios": [
+      "Compresión enfocada en pantorrilla",
+      "Recuperación post-entreno",
+      "Reduce dolor y agujetas",
+      "Mejora circulación pierna",
+      "Más compacta que botas completas",
+      "Ideal para corredores y atletas de pierna"
+    ],
+    "como_se_usa": "Coloca la manga en la pantorrilla. Ajusta el velcro. Enciende el dispositivo. Selecciona presión deseada. Relájate mientras los pulsos neumáticos trabajan.",
+    "zona_corporal": "Pantorrilla",
+    "duracion_sesion": "30-45 minutos",
+    "nota_tamaño": "Medium es tamaño estándar. Verifica que coincida con tu circumferencia de pantorrilla."
+  }
+}

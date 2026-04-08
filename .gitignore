@@ -19,9 +19,10 @@ env/
 dist/
 build/
 
-# Knowledge — incluye .gitkeep para estructura
+# Knowledge — incluye catálogos JSON y .gitkeep
 knowledge/*
 !knowledge/.gitkeep
+!knowledge/*.json
 
 # Session state
 config/session.yaml

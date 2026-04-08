@@ -384,9 +384,14 @@ async def webhook_handler(request: Request):
                         parts = msg.texto.split()
                         if len(parts) > 1:
                             target = parts[1]
-                            MUTED_CHATS.add(target)
-                            await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} silenciado. Bot no responderá.")
-                            logger.info(f"🔇 Admin silencia chat {target}")
+                            from agent.memory import tomar_control
+                            exito = await tomar_control(target)
+                            if exito:
+                                MUTED_CHATS.add(target)
+                                await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} silenciado. Bot no responderá.")
+                                logger.info(f"🔇 Admin silencia chat {target}")
+                            else:
+                                await proveedor.enviar_mensaje(msg.telefono, f"❌ No encontré el lead {target}")
                         return {"status": "ok"}
 
                     if msg.texto.startswith("/release"):
@@ -394,12 +399,23 @@ async def webhook_handler(request: Request):
                         parts = msg.texto.split()
                         if len(parts) > 1:
                             target = parts[1]
-                            MUTED_CHATS.discard(target)
-                            await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} activado. Bot responderá nuevamente.")
-                            logger.info(f"🔊 Admin reactiva chat {target}")
+                            from agent.memory import liberar_control
+                            exito = await liberar_control(target)
+                            if exito:
+                                MUTED_CHATS.discard(target)
+                                await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} activado. Bot responderá nuevamente.")
+                                logger.info(f"🔊 Admin reactiva chat {target}")
+                            else:
+                                await proveedor.enviar_mensaje(msg.telefono, f"❌ No encontré el lead {target}")
                         return {"status": "ok"}
 
-                # VALIDAR si chat está silenciado
+                # VALIDAR si chat está silenciado — leer de BD
+                lead_check = await obtener_lead(msg.telefono)
+                if lead_check and lead_check.en_manos_humanas:
+                    logger.info(f"🔇 Chat {msg.telefono} está en manos humanas. Bot no responde.")
+                    return {"status": "ok"}
+
+                # También chequear memoria como fallback
                 if msg.telefono in MUTED_CHATS:
                     logger.info(f"🔇 Chat {msg.telefono} está silenciado. No responder.")
                     return {"status": "ok"}
