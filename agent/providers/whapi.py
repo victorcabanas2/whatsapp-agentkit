@@ -231,7 +231,7 @@ class ProveedorWhapi(ProveedorWhatsApp):
             logger.error(f"✗ Error al enviar imagen: {e}")
             return False
 
-async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
+    async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
         """
         Envía un mensaje de texto via Whapi.cloud.
 
