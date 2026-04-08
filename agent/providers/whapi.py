@@ -94,15 +94,37 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 text_obj = msg.get("text", {})
                 texto = text_obj.get("body", "").strip()
 
+                # Variables para reply
+                reply_a_msg_id = None
+                reply_a_msg_texto = None
+
                 # Extraer mensaje citado si existe (reply)
                 quoted_msg = text_obj.get("quoted_message", {})
                 if quoted_msg:
                     quoted_text = quoted_msg.get("body", "").strip()
+                    quoted_id = quoted_msg.get("id", "").strip()
+                    reply_a_msg_id = quoted_id if quoted_id else None
+                    reply_a_msg_texto = quoted_text
                     # Prepender el contexto del mensaje citado
                     texto = f"[Reply a: \"{quoted_text[:100]}\"] {texto}"
-                    logger.debug(f"Reply detectado: {texto[:60]}...")
+                    logger.debug(f"Reply detectado: {texto[:60]}... (reply_id: {reply_a_msg_id})")
                 else:
                     logger.debug(f"Mensaje de texto: {texto[:50]}...")
+
+                # ═══════════════════════════════════════════════════════════
+                # EXTRAER CONTEXTO DE ANUNCIO (Meta Ads)
+                # ═══════════════════════════════════════════════════════════
+                # Meta Ads envía el contexto en varios lugares posibles:
+                # 1. context.id — ID del mensaje o anuncio anterior
+                # 2. context.reference_message_id — ID del mensaje referenciado
+                # 3. button.payload — Payload del botón del anuncio
+                ad_context = text_obj.get("context", {})
+                if ad_context:
+                    ad_id = ad_context.get("id") or ad_context.get("reference_message_id")
+                    if ad_id:
+                        contexto_payload = ad_id
+                        logger.info(f"🎯 Contexto de anuncio detectado: {ad_id}")
+                        texto = f"[CLIENTE VIENE DE ANUNCIO: {ad_id}] {texto}"
 
             # TIPO 2: Click en botón de anuncio/CTA
             elif tipo_msg == "button":
@@ -185,6 +207,10 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 es_propio=False,
                 payload=contexto_payload,  # Metadata del anuncio
                 imagen_url=imagen_url,  # URL de imagen si aplica
+                reply_a_mensaje_id=reply_a_msg_id if 'reply_a_msg_id' in locals() else None,
+                reply_a_texto=reply_a_msg_texto if 'reply_a_msg_texto' in locals() else None,
+                anuncio_id=contexto_payload,  # El payload puede contener el ID del anuncio
+                contexto_anuncio={"payload": contexto_payload} if contexto_payload else None,
             ))
             logger.info(f"📨 Mensaje parseado: {telefono} → {texto[:60]}...")
 

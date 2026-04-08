@@ -19,7 +19,7 @@ from fastapi.responses import PlainTextResponse, JSONResponse, HTMLResponse
 from dotenv import load_dotenv
 from sqlalchemy import select, desc, func
 
-from agent.brain import generar_respuesta, detectar_confirmacion_pago
+from agent.brain import generar_respuesta, detectar_confirmacion_pago, mapear_anuncio_a_producto
 from agent.stock_panel import router as stock_router
 from agent.memory import (
     # Funciones core
@@ -382,16 +382,47 @@ async def webhook_handler(request: Request):
                 historial = await obtener_historial(msg.telefono, limite=100)
                 logger.info(f"✓ Historial cargado: {len(historial)} mensajes")
 
-                # Si el mensaje viene de un anuncio (button/interactive/referral),
-                # agregar contexto al inicio del mensaje para que Claude sepa el producto
-                mensaje_contextualizado = msg.texto
+                # ═══════════════════════════════════════════════════════════
+                # CONTEXTUALIZACIÓN: Anuncios + Replies
+                # ═══════════════════════════════════════════════════════════
 
-                # Detectar si es un click desde anuncio y extraer payload
-                if msg.payload:
-                    # El payload contiene info del anuncio (ej: "depuffing_wand", "theragun_mini", etc)
-                    logger.info(f"📢 Mensaje desde anuncio con payload: {msg.payload}")
-                    # Prepender el payload al mensaje para que Claude lo entienda
-                    mensaje_contextualizado = f"[Vino desde anuncio de: {msg.payload}] {msg.texto}"
+                mensaje_contextualizado = msg.texto
+                contexto_sistema = []  # Para pasar a Claude el contexto adicional
+
+                # CASO 1: Mensaje desde un ANUNCIO DE META ADS
+                if msg.anuncio_id or msg.payload or msg.contexto_anuncio:
+                    anuncio_info = msg.anuncio_id or msg.payload or (msg.contexto_anuncio.get("payload") if msg.contexto_anuncio else None)
+                    logger.info(f"📢 CLIENTE VIENE DE ANUNCIO: {anuncio_info}")
+
+                    # Intentar mapear el ID del anuncio a un producto conocido
+                    producto_identificado = mapear_anuncio_a_producto(anuncio_info)
+
+                    contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente hizo clic en un anuncio específico.")
+                    contexto_sistema.append(f"ID/Datos del anuncio: {anuncio_info}")
+                    contexto_sistema.append(f"Producto del anuncio: {producto_identificado}")
+                    contexto_sistema.append(f"✅ TÚ CONOCES el producto que vio. NO preguntes 'de qué producto es'.")
+                    contexto_sistema.append(f"✅ Dale toda la información sobre: {producto_identificado}")
+                    contexto_sistema.append(f"✅ Precio, stock, beneficios, link — todo sin preguntar qué es.")
+
+                    # Prepender contexto para que Claude lo vea claramente
+                    mensaje_contextualizado = f"[CLIENTE VIENE DE ANUNCIO DE: {producto_identificado}] {msg.texto}"
+
+                # CASO 2: Mensaje es un REPLY a otro mensaje
+                if msg.reply_a_texto:
+                    logger.info(f"↩️ CLIENTE RESPONDE A MENSAJE PREVIO: {msg.reply_a_texto[:60]}...")
+
+                    contexto_sistema.append(f"↩️ CONTEXTO DE REPLY: Este cliente está respondiendo a tu mensaje anterior:")
+                    contexto_sistema.append(f"Tu pregunta anterior fue: \"{msg.reply_a_texto[:150]}...\"")
+                    contexto_sistema.append(f"✅ INTERPRETA la respuesta en el contexto de esa pregunta.")
+                    contexto_sistema.append(f"✅ NO repitas la pregunta. El cliente ya te está respondiendo.")
+
+                    # Agregar el contexto del reply al mensaje
+                    mensaje_contextualizado = f"[Reply a tu pregunta: '{msg.reply_a_texto[:80]}...'] Dice: {msg.texto}"
+
+                # Agregar contexto al inicio del historial para que Claude lo considere
+                if contexto_sistema:
+                    logger.debug(f"📌 Contexto especial para Claude:\n" + "\n".join(contexto_sistema))
+                    # El contexto se pasará como un mensaje de sistema adicional en generar_respuesta
 
                 # ═══════════════════════════════════════════════════════════
                 # COMANDOS ADMIN (solo desde ADMIN_WHATSAPP)
@@ -441,7 +472,12 @@ async def webhook_handler(request: Request):
 
                 # Generar respuesta con Claude
                 logger.debug("Llamando a Claude AI...")
-                respuesta = await generar_respuesta(mensaje_contextualizado, historial, imagen_url=msg.imagen_url)
+                respuesta = await generar_respuesta(
+                    mensaje_contextualizado,
+                    historial,
+                    imagen_url=msg.imagen_url,
+                    contexto_adicional="\n".join(contexto_sistema) if contexto_sistema else None
+                )
 
                 # Guardar mensaje del usuario
                 await guardar_mensaje(msg.telefono, "user", msg.texto)

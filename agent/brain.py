@@ -91,6 +91,47 @@ def obtener_mensaje_fallback() -> str:
     return config.get("fallback_message", "Disculpa, no entendí tu mensaje. ¿Podrías reformularlo?")
 
 
+def mapear_anuncio_a_producto(anuncio_id: str) -> str:
+    """
+    Mapea un ID de anuncio Meta a un producto conocido.
+
+    Ejemplo: "theragun_mini_ad_campaign_april_2026" → "Theragun Mini 3.0"
+
+    Args:
+        anuncio_id: ID del anuncio de Meta
+
+    Returns:
+        Nombre del producto o el ID original si no se puede mapear
+    """
+    # Mapeo de IDs comunes a productos (este mapeo crece según los anuncios)
+    mapeos = {
+        "theragun_mini": "Theragun Mini 3.0",
+        "theragun_pro_plus": "Theragun PRO Plus",
+        "whoop_one": "WHOOP ONE 5.0",
+        "whoop_peak": "WHOOP PEAK 5.0",
+        "whoop_life": "WHOOP LIFE MG",
+        "jetboots_prime": "JetBoots Prime",
+        "jetboots_pro_plus": "JetBoots Pro Plus",
+        "depuffing_wand": "TheraFace Depuffing Wand",
+        "theraface_pro": "TheraFace PRO",
+        "theraface_mask": "TheraFace Mask",
+        "smartgoggles": "SmartGoggles 2.0",
+        "foreo_faq_211": "FOREO FAQ 211 (Cuello)",
+        "foreo_faq_221": "FOREO FAQ 221 (Manos)",
+        "wavesolo": "WaveSolo",
+    }
+
+    # Buscar coincidencias en el ID del anuncio
+    anuncio_lower = anuncio_id.lower()
+    for clave, producto in mapeos.items():
+        if clave in anuncio_lower:
+            logger.info(f"✓ Producto mapeado: {anuncio_id} → {producto}")
+            return producto
+
+    # Si no encuentra coincidencia, retornar el ID original (Claude lo interpretará)
+    return anuncio_id
+
+
 def detectar_confirmacion_pago(mensaje: str) -> bool:
     """
     Detecta si el mensaje es una confirmación de pago.
@@ -186,7 +227,12 @@ async def obtener_contexto_stock() -> str:
         return ""
 
 
-async def generar_respuesta(mensaje: str, historial: list[dict], imagen_url: str | None = None) -> str:
+async def generar_respuesta(
+    mensaje: str,
+    historial: list[dict],
+    imagen_url: str | None = None,
+    contexto_adicional: str | None = None
+) -> str:
     """
     Genera una respuesta usando Claude API.
 
@@ -194,6 +240,7 @@ async def generar_respuesta(mensaje: str, historial: list[dict], imagen_url: str
         mensaje: El mensaje nuevo del usuario
         historial: Lista de mensajes anteriores [{"role": "user/assistant", "content": "..."}]
         imagen_url: URL de imagen si el usuario envió una imagen
+        contexto_adicional: Contexto extra para situaciones especiales (anuncios, replies, etc)
 
     Returns:
         La respuesta generada por Claude
@@ -207,6 +254,14 @@ async def generar_respuesta(mensaje: str, historial: list[dict], imagen_url: str
     if not system_prompt:
         logger.error("❌ No se pudo cargar el system prompt")
         return obtener_mensaje_error()
+
+    # Si hay contexto adicional (anuncio, reply, etc), agregarlo al system prompt
+    if contexto_adicional:
+        system_prompt += f"\n\n═══════════════════════════════════════════\n"
+        system_prompt += f"📌 CONTEXTO ESPECIAL PARA ESTA RESPUESTA:\n"
+        system_prompt += f"{contexto_adicional}\n"
+        system_prompt += f"═══════════════════════════════════════════\n"
+        logger.info(f"📌 Contexto adicional agregado al prompt")
 
     # Agregar contexto de stock al system prompt
     try:

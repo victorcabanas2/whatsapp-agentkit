@@ -23,6 +23,10 @@ class MensajeEntrante:
     es_propio: bool          # True si lo envió el agente (se ignora)
     payload: str | None = None  # Metadata del anuncio (ej: "depuffing_wand", "theragun_mini")
     imagen_url: str | None = None  # URL de imagen si el mensaje es una imagen
+    reply_a_mensaje_id: str | None = None  # ID del mensaje original si es un reply
+    reply_a_texto: str | None = None  # Contenido del mensaje al que se responde
+    anuncio_id: str | None = None  # ID o URL del anuncio Meta Ads
+    contexto_anuncio: dict | None = None  # Info completa del anuncio ({"source_type": "ad", "source_id": "...", ...})
 
 
 class ProveedorWhatsApp(ABC):
