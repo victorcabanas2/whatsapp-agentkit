@@ -391,7 +391,10 @@ async def webhook_handler(request: Request):
                 contexto_sistema = []  # Para pasar a Claude el contexto adicional
 
                 # 🔍 DEBUG: Log si se detectó contexto de anuncio
-                logger.debug(f"🔍 DEBUG ANUNCIO - anuncio_id: {msg.anuncio_id}, payload: {msg.payload}, contexto_anuncio: {msg.contexto_anuncio}")
+                logger.info(f"🔍 DEBUG ANUNCIO COMPLETO - anuncio_id: {msg.anuncio_id}")
+                logger.info(f"🔍 payload: {msg.payload}")
+                logger.info(f"🔍 contexto_anuncio: {msg.contexto_anuncio}")
+                logger.info(f"🔍 imagen_url: {msg.imagen_url}")
 
                 # CASO 1: Mensaje desde un ANUNCIO DE META ADS
                 if msg.anuncio_id or msg.payload or msg.contexto_anuncio:
