@@ -275,14 +275,67 @@ async def generar_respuesta(
     # Construir mensajes para la API
     mensajes = []
 
-    # Agregar historial (máximo últimos 10 mensajes para economizar tokens)
-    for msg in historial[-10:]:
-        mensajes.append({
-            "role": msg.get("role", "user"),
-            "content": msg.get("content", "")
-        })
+    # ═══════════════════════════════════════════════════════════
+    # PROCESAR HISTORIAL — Extraer imágenes si existen
+    # ═══════════════════════════════════════════════════════════
 
-    # Construir content block para el mensaje actual
+    for msg in historial[-10:]:
+        msg_role = msg.get("role", "user")
+        msg_content = msg.get("content", "")
+
+        # Detectar si el contenido tiene imagen guardada ([IMG:...])
+        if msg_content.startswith("[IMG:"):
+            # Extraer URL de imagen
+            try:
+                end_img_tag = msg_content.find("]")
+                if end_img_tag > 5:
+                    img_url = msg_content[5:end_img_tag]  # Extraer entre [IMG: y ]
+                    msg_text = msg_content[end_img_tag + 1:].strip()  # Resto del contenido
+
+                    # Crear content block con imagen + texto
+                    content = [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "url",
+                                "url": img_url
+                            }
+                        }
+                    ]
+                    if msg_text:
+                        content.append({
+                            "type": "text",
+                            "text": msg_text
+                        })
+
+                    logger.debug(f"🖼️ Imagen extraída del historial: {img_url[:60]}...")
+                    mensajes.append({
+                        "role": msg_role,
+                        "content": content
+                    })
+                else:
+                    # Si el formato está mal, guardar como texto
+                    mensajes.append({
+                        "role": msg_role,
+                        "content": msg_content
+                    })
+            except Exception as e:
+                logger.warning(f"⚠️ Error extrayendo imagen del historial: {e}")
+                mensajes.append({
+                    "role": msg_role,
+                    "content": msg_content
+                })
+        else:
+            # Mensaje sin imagen, guardar como texto
+            mensajes.append({
+                "role": msg_role,
+                "content": msg_content
+            })
+
+    # ═══════════════════════════════════════════════════════════
+    # PROCESAR MENSAJE ACTUAL
+    # ═══════════════════════════════════════════════════════════
+
     if imagen_url:
         # Si hay imagen, crear un content block con imagen + texto
         content = [
@@ -307,7 +360,7 @@ async def generar_respuesta(
                 "text": "¿Qué producto es este? Identifica y dame todos los detalles."
             })
 
-        logger.info(f"📸 Imagen detectada: {imagen_url[:60]}...")
+        logger.info(f"📸 Imagen actual detectada: {imagen_url[:60]}...")
     else:
         # Solo texto
         content = mensaje

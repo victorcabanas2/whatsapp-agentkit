@@ -479,8 +479,14 @@ async def webhook_handler(request: Request):
                     contexto_adicional="\n".join(contexto_sistema) if contexto_sistema else None
                 )
 
-                # Guardar mensaje del usuario
-                await guardar_mensaje(msg.telefono, "user", msg.texto)
+                # Guardar mensaje del usuario (con imagen_url si existe)
+                if msg.imagen_url:
+                    content_a_guardar = f"[IMG:{msg.imagen_url}]\n{msg.texto}"
+                    logger.info(f"📸 Guardando mensaje con imagen: {msg.imagen_url[:60]}...")
+                else:
+                    content_a_guardar = msg.texto
+
+                await guardar_mensaje(msg.telefono, "user", content_a_guardar)
 
                 # ═══════════════════════════════════════════════════════════
                 # LEAD SCORING — Clasificar cliente por potencial
