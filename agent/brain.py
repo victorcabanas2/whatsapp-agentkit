@@ -104,21 +104,56 @@ def mapear_anuncio_a_producto(anuncio_id: str) -> str:
         Nombre del producto o el ID original si no se puede mapear
     """
     # Mapeo de IDs comunes a productos (este mapeo crece según los anuncios)
+    # Incluye múltiples variaciones para cada producto
     mapeos = {
+        # Therabody — Theragun (percutor)
         "theragun_mini": "Theragun Mini 3.0",
+        "theragun": "Theragun Mini 3.0",
         "theragun_pro_plus": "Theragun PRO Plus",
+        "theragun_pro": "Theragun PRO Plus",
+
+        # Therabody — TheraCup
+        "theracup": "TheraCup",
+        "thera_cup": "TheraCup",
+
+        # Therabody — WaveSolo
+        "wavesolo": "WaveSolo",
+        "wave_solo": "WaveSolo",
+
+        # Therabody — JetBoots
+        "jetboots_prime": "JetBoots Prime",
+        "jetboots_prime": "JetBoots Prime",
+        "jetboots_pro_plus": "JetBoots Pro Plus",
+        "jetboots_pro": "JetBoots Pro Plus",
+        "jetboots": "JetBoots Prime",
+
+        # Therabody — TheraFace
+        "theraface_pro": "TheraFace PRO",
+        "theraface_mask": "TheraFace Mask",
+        "theraface_depuffing": "TheraFace Depuffing Wand",
+        "depuffing_wand": "TheraFace Depuffing Wand",
+        "depuffing": "TheraFace Depuffing Wand",
+        "theraface": "TheraFace PRO",
+
+        # Therabody — SmartGoggles
+        "smartgoggles": "SmartGoggles 2.0",
+        "smart_goggles": "SmartGoggles 2.0",
+
+        # WHOOP
         "whoop_one": "WHOOP ONE 5.0",
         "whoop_peak": "WHOOP PEAK 5.0",
         "whoop_life": "WHOOP LIFE MG",
-        "jetboots_prime": "JetBoots Prime",
-        "jetboots_pro_plus": "JetBoots Pro Plus",
-        "depuffing_wand": "TheraFace Depuffing Wand",
-        "theraface_pro": "TheraFace PRO",
-        "theraface_mask": "TheraFace Mask",
-        "smartgoggles": "SmartGoggles 2.0",
-        "foreo_faq_211": "FOREO FAQ 211 (Cuello)",
-        "foreo_faq_221": "FOREO FAQ 221 (Manos)",
-        "wavesolo": "WaveSolo",
+        "whoop": "WHOOP ONE 5.0",
+
+        # FOREO
+        "foreo_faq_211": "FOREO FAQ™ 211 (Cuello)",
+        "foreo_faq": "FOREO FAQ™ 211 (Cuello)",
+        "faq_211": "FOREO FAQ™ 211 (Cuello)",
+        "faq211": "FOREO FAQ™ 211 (Cuello)",
+        "foreo_faq_221": "FOREO FAQ™ 221 (Manos)",
+        "faq_221": "FOREO FAQ™ 221 (Manos)",
+        "faq221": "FOREO FAQ™ 221 (Manos)",
+        "foreo": "FOREO FAQ™ 211 (Cuello)",
     }
 
     # Buscar coincidencias en el ID del anuncio

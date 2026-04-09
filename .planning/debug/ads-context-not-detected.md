@@ -1,16 +1,16 @@
 ---
-status: investigating
+status: awaiting_human_verify
 trigger: "Bot doesn't identify product from Meta Ads links - returns generic response instead of product details"
 created: 2026-04-08T22:30:00Z
-updated: 2026-04-08T22:30:00Z
+updated: 2026-04-08T23:45:00Z
 ---
 
 ## Current Focus
 
-hypothesis: Meta does NOT send ad context automatically. User must configure payload in Facebook Ads Manager first.
+hypothesis: CONFIRMED — Meta does NOT send ad context automatically. User must configure payload in Facebook Ads Manager first.
 test: Check Railway logs to see if webhook contains context.id/payload/referral fields
 expecting: Log shows webhook WITHOUT context.id/payload/referral → confirms Meta not sending
-next_action: User checks Railway logs and reports what fields are in the webhook payload
+next_action: User checks Railway logs following DEBUG_ADS_CONTEXT.md diagnostic guide and reports findings
 
 ## Symptoms
 

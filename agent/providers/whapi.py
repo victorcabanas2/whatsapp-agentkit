@@ -118,13 +118,41 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 # 1. context.id — ID del mensaje o anuncio anterior
                 # 2. context.reference_message_id — ID del mensaje referenciado
                 # 3. button.payload — Payload del botón del anuncio
+                # 4. referral en RAÍZ del mensaje (Click-to-WhatsApp de Facebook)
+
                 ad_context = text_obj.get("context", {})
                 if ad_context:
                     ad_id = ad_context.get("id") or ad_context.get("reference_message_id")
                     if ad_id:
                         contexto_payload = ad_id
-                        logger.info(f"🎯 Contexto de anuncio detectado: {ad_id}")
+                        logger.info(f"🎯 Contexto de anuncio detectado (desde context): {ad_id}")
                         texto = f"[CLIENTE VIENE DE ANUNCIO: {ad_id}] {texto}"
+
+                # BUSCAR REFERRAL EN RAÍZ DEL MENSAJE (Meta Click-to-WhatsApp)
+                root_referral = msg.get("referral", {})
+                if root_referral:
+                    source_type = root_referral.get("source_type", "").strip()
+                    source_id = root_referral.get("source_id", "").strip()
+                    body_url = root_referral.get("body_url", "").strip()
+                    headline = root_referral.get("headline", "").strip()
+
+                    if source_type == "ad" or source_id:
+                        # Esto es un anuncio Meta
+                        if source_id and not contexto_payload:
+                            contexto_payload = source_id
+                            logger.info(f"🎯 Contexto de anuncio detectado (desde referral): {source_id}")
+                            if headline:
+                                texto = f"[CLIENTE VIENE DE ANUNCIO: {source_id} ({headline})] {texto}"
+                            else:
+                                texto = f"[CLIENTE VIENE DE ANUNCIO: {source_id}] {texto}"
+
+                        # Guardar URL del anuncio en contexto_payload para que ad_analyzer pueda procesarla
+                        if body_url:
+                            if contexto_payload and "|" not in contexto_payload:
+                                contexto_payload = f"{contexto_payload}|URL:{body_url}"
+                            elif not contexto_payload:
+                                contexto_payload = f"URL:{body_url}"
+                            logger.debug(f"📄 URL del anuncio encontrada: {body_url[:80]}...")
 
             # TIPO 2: Click en botón de anuncio/CTA
             elif tipo_msg == "button":
@@ -200,17 +228,26 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 logger.debug(f"Mensaje vacío de {telefono}, ignorando")
                 continue
 
+            # EXTRAER ad_url DE contexto_payload SI ESTÁ INCLUIDA
+            ad_url = None
+            if contexto_payload and "|URL:" in contexto_payload:
+                parts = contexto_payload.split("|URL:")
+                ad_url = parts[1] if len(parts) > 1 else None
+
             mensajes.append(MensajeEntrante(
                 telefono=telefono,
                 texto=texto,
                 mensaje_id=mensaje_id,
                 es_propio=False,
-                payload=contexto_payload,  # Metadata del anuncio
+                payload=contexto_payload,  # Metadata del anuncio (puede contener |URL:...)
                 imagen_url=imagen_url,  # URL de imagen si aplica
                 reply_a_mensaje_id=reply_a_msg_id if 'reply_a_msg_id' in locals() else None,
                 reply_a_texto=reply_a_msg_texto if 'reply_a_msg_texto' in locals() else None,
                 anuncio_id=contexto_payload,  # El payload puede contener el ID del anuncio
-                contexto_anuncio={"payload": contexto_payload} if contexto_payload else None,
+                contexto_anuncio={
+                    "payload": contexto_payload.split("|URL:")[0] if contexto_payload else None,
+                    "ad_url": ad_url,
+                } if contexto_payload else None,
             ))
             logger.info(f"📨 Mensaje parseado: {telefono} → {texto[:60]}...")
 

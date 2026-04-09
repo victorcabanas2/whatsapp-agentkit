@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from sqlalchemy import select, desc, func
 
 from agent.brain import generar_respuesta, detectar_confirmacion_pago, mapear_anuncio_a_producto
+from agent.ad_analyzer import identificar_producto_desde_anuncio
 from agent.stock_panel import router as stock_router
 from agent.memory import (
     # Funciones core
@@ -395,14 +396,27 @@ async def webhook_handler(request: Request):
                 # CASO 1: Mensaje desde un ANUNCIO DE META ADS
                 if msg.anuncio_id or msg.payload or msg.contexto_anuncio:
                     anuncio_info = msg.anuncio_id or msg.payload or (msg.contexto_anuncio.get("payload") if msg.contexto_anuncio else None)
+                    ad_url = msg.contexto_anuncio.get("ad_url") if msg.contexto_anuncio else None
+
                     logger.info(f"📢 CLIENTE VIENE DE ANUNCIO: {anuncio_info}")
 
-                    # Intentar mapear el ID del anuncio a un producto conocido
-                    producto_identificado = mapear_anuncio_a_producto(anuncio_info)
+                    # ═══════════════════════════════════════════════════════════
+                    # IDENTIFICAR PRODUCTO CON 3 CAPAS (imagen → URL → mapeo)
+                    # ═══════════════════════════════════════════════════════════
+
+                    producto_identificado = await identificar_producto_desde_anuncio(
+                        imagen_url=msg.imagen_url,
+                        ad_url=ad_url,
+                        payload=anuncio_info,
+                    )
+
+                    # Si ad_analyzer no encontró nada, usar el mapeo directo como fallback
+                    if not producto_identificado:
+                        producto_identificado = mapear_anuncio_a_producto(anuncio_info)
 
                     contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente hizo clic en un anuncio específico.")
                     contexto_sistema.append(f"ID/Datos del anuncio: {anuncio_info}")
-                    contexto_sistema.append(f"Producto del anuncio: {producto_identificado}")
+                    contexto_sistema.append(f"Producto identificado: {producto_identificado}")
                     contexto_sistema.append(f"✅ TÚ CONOCES el producto que vio. NO preguntes 'de qué producto es'.")
                     contexto_sistema.append(f"✅ Dale toda la información sobre: {producto_identificado}")
                     contexto_sistema.append(f"✅ Precio, stock, beneficios, link — todo sin preguntar qué es.")
