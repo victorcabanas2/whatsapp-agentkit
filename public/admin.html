@@ -49,6 +49,14 @@
             </tbody>
         </table>
 
+        <h2>📨 Envío Masivo</h2>
+        <div style="background: #1e293b; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <textarea id="masivo-telefonos" placeholder="Teléfonos separados por coma (595991234567, 595991234568...)" style="width: 100%; height: 80px; padding: 10px; border: 1px solid #334155; border-radius: 4px; background: #0f172a; color: #e2e8f0; font-family: monospace; margin-bottom: 10px;"></textarea>
+            <textarea id="masivo-mensaje" placeholder="Mensaje a enviar..." style="width: 100%; height: 80px; padding: 10px; border: 1px solid #334155; border-radius: 4px; background: #0f172a; color: #e2e8f0; margin-bottom: 10px;"></textarea>
+            <button onclick="enviarMasivo()" style="background: #10b981; color: black; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">📤 Enviar Masivo</button>
+            <div id="masivo-resultado" style="margin-top: 10px; color: #94a3b8;"></div>
+        </div>
+
         <h2>📦 Pedidos Recientes</h2>
         <table id="pedidos-table">
             <thead>
@@ -133,6 +141,29 @@
             } catch (e) {
                 console.error('Error:', e);
                 document.getElementById('stats').innerHTML = '<div class="stat-card" style="border-left-color: #ef4444;">Error cargando datos</div>';
+            }
+        }
+
+        async function enviarMasivo() {
+            const telefonos = document.getElementById('masivo-telefonos').value.split(',').map(t => t.trim()).filter(t => t);
+            const mensaje = document.getElementById('masivo-mensaje').value;
+
+            if (!telefonos.length || !mensaje) {
+                alert('Ingresa teléfonos y mensaje');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/admin/enviar-masivo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telefonos, mensaje })
+                });
+                const data = await res.json();
+                document.getElementById('masivo-resultado').innerHTML =
+                    `✅ ${data.exitosos}/${data.total} enviados`;
+            } catch (e) {
+                document.getElementById('masivo-resultado').innerHTML = '❌ Error: ' + e;
             }
         }
 

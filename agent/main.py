@@ -1451,6 +1451,29 @@ async def get_chat_status(telefono: str):
         return {"telefono": telefono, "control": "error", "en_manos_humanas": False}
 
 
+@app.post("/api/admin/enviar-masivo")
+async def enviar_masivo(telefonos: list, mensaje: str):
+    """Envía mensaje a múltiples teléfonos."""
+    try:
+        proveedor = obtener_proveedor()
+        resultados = []
+
+        for telefono in telefonos:
+            exito = await proveedor.enviar_mensaje(telefono, mensaje)
+            resultados.append({"telefono": telefono, "exito": exito})
+            logger.info(f"📤 Masivo a {telefono}: {'✅' if exito else '❌'}")
+
+        return {
+            "total": len(telefonos),
+            "exitosos": sum(1 for r in resultados if r["exito"]),
+            "fallidos": sum(1 for r in resultados if not r["exito"]),
+            "resultados": resultados
+        }
+    except Exception as e:
+        logger.error(f"Error envío masivo: {e}")
+        return {"error": str(e)}
+
+
 @app.post("/api/admin/toggle-control")
 async def toggle_control(telefono: str):
     """Toggle: silencia/reactiva un chat guardando en BD."""
