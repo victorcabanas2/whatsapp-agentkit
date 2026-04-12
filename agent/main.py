@@ -603,7 +603,7 @@ async def webhook_handler(request: Request):
                 # LÓGICA DE PAGOS - Detectar métodos de pago
                 # ═══════════════════════════════════════════════════════════
 
-                metodo_pago = detectar_opcion_pago(respuesta)
+                metodo_pago = detectar_opcion_pago(respuesta_limpia)
 
                 if metodo_pago == "transferencia":
                     # Enviar imagen de datos bancarios
