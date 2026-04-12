@@ -1598,6 +1598,33 @@ async def admin_enviar_imagen(request: Request):
         return {"exito": False, "mensaje": str(e)}
 
 
+@app.post("/api/admin/enviar-mensaje")
+async def admin_enviar_mensaje(request: Request):
+    """
+    Envía un mensaje de texto a un cliente específico (sin imagen).
+    Acepta: telefono (str), mensaje (str)
+
+    Returns:
+        {"exito": bool, "mensaje": str}
+    """
+    try:
+        form = await request.form()
+        telefono = form.get('telefono', '')
+        mensaje_texto = form.get('mensaje', '')
+
+        if not telefono or not mensaje_texto:
+            return {"exito": False, "mensaje": "Teléfono y mensaje son requeridos"}
+
+        exito = await proveedor.enviar_mensaje(telefono, mensaje_texto)
+        return {
+            "exito": exito,
+            "mensaje": "Mensaje enviado" if exito else "Error al enviar mensaje"
+        }
+    except Exception as e:
+        logger.error(f"Error en enviar_mensaje: {e}", exc_info=True)
+        return {"exito": False, "mensaje": str(e)}
+
+
 @app.get("/api/admin/clientes-importados")
 async def admin_clientes_importados(pagina: int = 1, por_pagina: int = 20, q: str = ""):
     """
