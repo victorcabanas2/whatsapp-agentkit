@@ -282,6 +282,15 @@ async def lifespan(app: FastAPI):
     inicializar_scheduler()
     logger.info("✓ Scheduler de seguimientos iniciado")
 
+    # Sincronizar imágenes de productos desde Shopify
+    try:
+        from agent.shopify import sincronizar_imagenes_productos
+        logger.info("📸 Sincronizando imágenes de productos desde Shopify...")
+        imagenes = await sincronizar_imagenes_productos()
+        logger.info(f"✓ Sincronización de imágenes completada ({len(imagenes)} productos)")
+    except Exception as e:
+        logger.warning(f"⚠️ Error sincronizando imágenes: {e}")
+
     logger.info(f"✓ Proveedor WhatsApp: {proveedor.__class__.__name__}")
     logger.info(f"✓ Modo: {ENVIRONMENT}")
     logger.info(f"✓ Puerto: {PORT}")
@@ -513,12 +522,17 @@ async def webhook_handler(request: Request):
 
                 # Generar respuesta con Claude
                 logger.debug("Llamando a Claude AI...")
-                respuesta = await generar_respuesta(
+                respuesta_raw = await generar_respuesta(
                     mensaje_contextualizado,
                     historial,
                     imagen_url=msg.imagen_url,
                     contexto_adicional="\n".join(contexto_sistema) if contexto_sistema else None
                 )
+
+                # Extraer imagen si Claude la incluyó en la respuesta
+                from agent.brain import extraer_imagen_de_respuesta, obtener_url_imagen
+                respuesta_limpia, product_id = extraer_imagen_de_respuesta(respuesta_raw)
+                url_imagen_producto = obtener_url_imagen(product_id) if product_id else None
 
                 # Guardar mensaje del usuario (con imagen_url si existe)
                 if msg.imagen_url:
@@ -564,17 +578,26 @@ async def webhook_handler(request: Request):
                         f"{nombre} ({msg.telefono})\nScore: {lead.score}/100\nDice: '{msg.texto[:80]}...'"
                     )
 
-                # Guardar respuesta del agente
-                await guardar_mensaje(msg.telefono, "assistant", respuesta)
+                # Guardar respuesta limpia del agente (sin el marcador de imagen)
+                await guardar_mensaje(msg.telefono, "assistant", respuesta_limpia)
 
-                # Enviar respuesta por WhatsApp
-                exito = await proveedor.enviar_mensaje(msg.telefono, respuesta)
+                # Enviar respuesta de texto por WhatsApp
+                exito = await proveedor.enviar_mensaje(msg.telefono, respuesta_limpia)
 
                 if exito:
                     logger.info(f"✓ Respuesta enviada a {msg.telefono}")
-                    logger.debug(f"   Respuesta: {respuesta[:100]}...")
+                    logger.debug(f"   Respuesta: {respuesta_limpia[:100]}...")
                 else:
                     logger.error(f"✗ Fallo al enviar respuesta a {msg.telefono}")
+
+                # Enviar imagen del producto si Claude la solicitó
+                if url_imagen_producto:
+                    await asyncio.sleep(1)  # Pequeño delay para que llegue después del texto
+                    exito_imagen = await enviar_imagen(msg.telefono, url_imagen_producto)
+                    if exito_imagen:
+                        logger.info(f"📸 Imagen de producto enviada a {msg.telefono} (product_id: {product_id})")
+                    else:
+                        logger.warning(f"⚠️ Error enviando imagen a {msg.telefono}")
 
                 # ═══════════════════════════════════════════════════════════
                 # LÓGICA DE PAGOS - Detectar métodos de pago
@@ -1996,4 +2019,27 @@ async def admin_estadisticas_auditoria():
             "status": "error",
             "estadisticas": {},
             "error_message": str(e)
+        }
+
+
+@app.post("/sync/imagenes")
+async def sincronizar_imagenes():
+    """
+    Sincroniza las imágenes de productos desde Shopify API.
+    Útil para re-sincronizar manualmente sin reiniciar el servidor.
+    """
+    try:
+        from agent.shopify import sincronizar_imagenes_productos
+        logger.info("📸 Sincronización manual de imágenes iniciada...")
+        imagenes = await sincronizar_imagenes_productos()
+        return {
+            "status": "ok",
+            "mensaje": f"✅ {len(imagenes)} imágenes sincronizadas desde Shopify",
+            "total_productos": len(imagenes)
+        }
+    except Exception as e:
+        logger.error(f"Error sincronizando imágenes: {e}")
+        return {
+            "status": "error",
+            "mensaje": f"❌ Error en sincronización: {str(e)}"
         }

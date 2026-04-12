@@ -431,3 +431,56 @@ async def generar_respuesta(
     except Exception as e:
         logger.error(f"❌ Error en Claude API: {e}")
         return obtener_mensaje_error()
+
+
+def extraer_imagen_de_respuesta(respuesta: str) -> tuple[str, str | None]:
+    """
+    Extrae el marcador [IMAGEN:product_id] de la respuesta de Claude si existe.
+    Retorna el texto limpio (sin el marcador) y el product_id si se encontró.
+
+    Args:
+        respuesta: La respuesta completa de Claude
+
+    Returns:
+        Tupla (texto_limpio, product_id_o_None)
+
+    Ejemplo:
+        Input: "Mirá el Theragun Mini 3.0... [IMAGEN:9146847002882]"
+        Output: ("Mirá el Theragun Mini 3.0...", "9146847002882")
+    """
+    import re
+
+    # Buscar el patrón [IMAGEN:...] en la respuesta
+    match = re.search(r'\[IMAGEN:([^\]]+)\]', respuesta)
+
+    if match:
+        product_id = match.group(1).strip()
+
+        # Extraer el texto limpio (sin el marcador)
+        texto_limpio = respuesta[:match.start()].strip() + " " + respuesta[match.end():].strip()
+        texto_limpio = texto_limpio.strip()
+
+        logger.debug(f"🖼️ Marcador de imagen detectado: product_id={product_id}")
+        return texto_limpio, product_id
+
+    # No hay marcador de imagen
+    return respuesta, None
+
+
+def obtener_url_imagen(product_id: str) -> str | None:
+    """
+    Obtiene la URL de imagen de un producto desde el catálogo local.
+    Usa el archivo knowledge/imagenes_productos.json generado por shopify.py.
+
+    Args:
+        product_id: ID del producto en Shopify (string numérico)
+
+    Returns:
+        URL de la imagen, o None si no existe
+
+    Nota:
+        Esta es una función wrapper que delega a shopify.obtener_url_imagen_producto()
+    """
+    from agent.shopify import obtener_url_imagen_producto
+
+    return obtener_url_imagen_producto(product_id)
