@@ -13,11 +13,15 @@ export const loader = async ({ request }) => {
 
   try {
     const leads = await getLeads(estado, 500);
+    // Filter by estado if provided
+    if (estado && estado !== "todos") {
+      return { leads: leads.filter(l => l.intencion === estado), estado };
+    }
     return { leads, estado };
   } catch (e) {
     console.log("Bot API error, using mock data:", e.message);
     // Mock data for development
-    const mockLeads = [
+    const allMocks = [
       {
         id: "1",
         telefono: "+595991234567",

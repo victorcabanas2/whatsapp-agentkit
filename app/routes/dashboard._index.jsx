@@ -57,14 +57,14 @@ export default function DashboardHome() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total Leads" value={stats.total_leads} icon="👥" />
-        <StatCard label="Leads Calientes" value={stats.hot_leads} icon="🔥" />
+        <StatCard label="Total Leads" value={stats.total_leads || 0} icon="👥" />
+        <StatCard label="Leads Calientes" value={stats.hot_leads || 0} icon="🔥" />
         <StatCard
           label="Conversión"
-          value={`${stats.conversion_pct}%`}
+          value={`${stats.conversion_pct || 0}%`}
           icon="📈"
         />
-        <StatCard label="Pedidos Hoy" value={stats.pedidos_hoy} icon="🛒" />
+        <StatCard label="Pedidos Hoy" value={stats.pedidos_hoy || 0} icon="🛒" />
       </div>
 
       {/* Hot Leads Table */}
