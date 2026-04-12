@@ -1,7 +1,8 @@
 # Shopify Configuration — Integración con rebody.myshopify.com
 
 shop_name: rebody.myshopify.com
-access_token: a3c1dfd48c93ec96a9470cd4061963d1
+# Token debe estar en variable de entorno SHOPIFY_ACCESS_TOKEN (no aquí por seguridad)
+access_token: "${SHOPIFY_ACCESS_TOKEN}"
 
 # Product ID mapping: nombre_producto → shopify_product_id
 # Usado para consultar stock en tiempo real

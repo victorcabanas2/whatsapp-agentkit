@@ -28,13 +28,22 @@ def cargar_config_shopify() -> dict:
 
 
 def obtener_credenciales_shopify() -> tuple[str, str] | None:
-    """Retorna (shop_name, access_token) o None si faltan."""
-    config = cargar_config_shopify()
-    shop_name = config.get("shop_name")
-    access_token = config.get("access_token")
+    """
+    Retorna (shop_name, access_token) o None si faltan.
+    Lee primero desde variables de entorno (seguro), luego desde config/shopify.yaml.
+    """
+    # Intentar leer desde variables de entorno primero (SEGURO para Railway)
+    access_token = os.getenv("SHOPIFY_ACCESS_TOKEN")
+    shop_name = os.getenv("SHOPIFY_SHOP_NAME")
+
+    # Si no están en env, leer desde config/shopify.yaml (fallback local)
+    if not (access_token and shop_name):
+        config = cargar_config_shopify()
+        shop_name = shop_name or config.get("shop_name")
+        access_token = access_token or config.get("access_token")
 
     if not shop_name or not access_token:
-        logger.error("❌ Credenciales de Shopify incompletas en config/shopify.yaml")
+        logger.error("❌ Credenciales de Shopify incompletas. Configura SHOPIFY_SHOP_NAME y SHOPIFY_ACCESS_TOKEN")
         return None
 
     return shop_name, access_token
