@@ -3,26 +3,33 @@
 
 """
 Ejecuta tareas automáticas en background:
+- Seguimiento a clientes MISMO DÍA de contacto inicial
 - Seguimiento a clientes 1 día después de contacto
 - Seguimiento a clientes 3 días después de contacto
 - Recordatorio de promo cada domingo (solo si hay carrito abandonado)
+- Seguimientos programados dinámicamente por el cliente ("escríbeme en 4 minutos")
 """
 
 import logging
+import asyncio
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 
 from agent.memory import (
+    obtener_leads_sin_respuesta_mismo_dia,
     obtener_leads_sin_respuesta_1dia,
     obtener_leads_sin_respuesta_3dias,
+    marcar_seguimiento_mismo_dia,
     marcar_seguimiento_1dia,
     marcar_seguimiento_3dias,
     obtener_carritos_pendientes,
     marcar_carrito_recordatorio_enviado,
     obtener_pedidos_sin_encuesta,
     marcar_encuesta_enviada,
+    obtener_seguimientos_programados,
+    marcar_seguimiento_programado_enviado,
 )
 from agent.providers import obtener_proveedor
 
@@ -32,8 +39,53 @@ scheduler = BackgroundScheduler(timezone=pytz.timezone('America/Asuncion'))
 proveedor = obtener_proveedor()
 
 
+# WRAPPERS SYNC para APScheduler — convierte async → sync
+def _sync_wrapper(async_func):
+    """Convierte una función async a sync para APScheduler."""
+    def wrapper(*args, **kwargs):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(async_func(*args, **kwargs))
+        finally:
+            loop.close()
+    return wrapper
+
+
+# ════════════════════════════════════════════════════════════════
+# JOBS AUTOMÁTICOS — Seguimientos rutinarios
+# ════════════════════════════════════════════════════════════════
+
+async def job_seguimiento_mismo_dia():
+    """Envía recordatorio a leads el MISMO DÍA de contacto inicial (después de 3 horas)."""
+    try:
+        logger.info("📅 Ejecutando: Seguimiento MISMO DÍA")
+        leads = await obtener_leads_sin_respuesta_mismo_dia()
+
+        if not leads:
+            logger.debug("No hay leads con seguimiento mismo día pendiente")
+            return
+
+        for lead in leads:
+            mensaje = (
+                f"Hola {lead.nombre or 'che'}! Déjame preguntarte algo.\n\n"
+                f"¿Seguís interesado en los productos que te mostré?\n\n"
+                f"Si tenés dudas o querés conocer más, acá estoy para ayudarte 💪"
+            )
+
+            exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
+            if exito:
+                await marcar_seguimiento_mismo_dia(lead.telefono)
+                logger.info(f"✓ Seguimiento mismo día enviado a {lead.telefono}")
+            else:
+                logger.error(f"✗ Fallo envío a {lead.telefono}")
+
+    except Exception as e:
+        logger.error(f"Error en job_seguimiento_mismo_dia: {e}")
+
+
 async def job_seguimiento_1dia():
-    """Envía recordatorio a leads que no respondieron en 1 día."""
+    """Envía recordatorio a leads que no respondieron en 1 día después de contacto."""
     try:
         logger.info("📅 Ejecutando: Seguimiento 1 día")
         leads = await obtener_leads_sin_respuesta_1dia()
@@ -44,9 +96,9 @@ async def job_seguimiento_1dia():
 
         for lead in leads:
             mensaje = (
-                f"Hola {lead.nombre or 'che'}! Volvimos a pensar en vos.\n"
-                f"¿Alguna duda con los productos? Seguimos aquí para ayudarte.\n"
-                f"Escribí cuando quieras."
+                f"Hola {lead.nombre or 'che'}! Volvimos a pensar en vos.\n\n"
+                f"¿Alguna duda con los productos? Seguimos aquí para ayudarte.\n\n"
+                f"Escribí cuando quieras 💙"
             )
 
             exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
@@ -61,7 +113,7 @@ async def job_seguimiento_1dia():
 
 
 async def job_seguimiento_3dias():
-    """Envía recordatorio a leads que no respondieron en 3 días."""
+    """Envía recordatorio a leads que no respondieron en 3 días después de contacto."""
     try:
         logger.info("📅 Ejecutando: Seguimiento 3 días")
         leads = await obtener_leads_sin_respuesta_3dias()
@@ -72,10 +124,10 @@ async def job_seguimiento_3dias():
 
         for lead in leads:
             mensaje = (
-                f"Hola de nuevo! No queremos que te pierdas estos productos.\n"
-                f"Si tenés dudas específicas o necesitás algo especial, contáctate con nuestro equipo comercial:\n"
-                f"+595 993 233333\n"
-                f"Estamos acá para ayudarte."
+                f"Hola de nuevo! No queremos que te pierdas estos productos.\n\n"
+                f"Si tenés dudas específicas o necesitás algo especial, contáctate con nuestro equipo comercial:\n\n"
+                f"+595 993 233333\n\n"
+                f"Estamos acá para ayudarte 🚀"
             )
 
             exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
@@ -90,7 +142,7 @@ async def job_seguimiento_3dias():
 
 
 async def job_promo_domingo():
-    """Envía promos y recordatorios de carrito cada domingo."""
+    """Envía promos y recordatorios de carrito cada domingo a los que no respondieron."""
     try:
         logger.info("📅 Ejecutando: Promos de domingo")
         carritos = await obtener_carritos_pendientes()
@@ -113,11 +165,11 @@ async def job_promo_domingo():
             )
 
             mensaje = (
-                f"Domengo especial en Rebody!\n"
+                f"🌟 Dominguito especial en Rebody!\n\n"
                 f"Te acordás de esto que querías?\n\n"
                 f"{productos_texto}\n\n"
-                f"¿Todavía te interesa? Hagamos tu pedido hoy.\n"
-                f"Escribí si querés."
+                f"¿Todavía te interesa? Hagamos tu pedido hoy.\n\n"
+                f"Escribí cuando quieras 😊"
             )
 
             exito = await proveedor.enviar_mensaje(telefono, mensaje)
@@ -145,7 +197,7 @@ async def job_encuesta_post_venta():
         for pedido in pedidos:
             mensaje = (
                 f"Hola! 👋\n\n"
-                f"¿Cómo te fue con tu {pedido.producto}?\n"
+                f"¿Cómo te fue con tu {pedido.producto}?\n\n"
                 f"Nos encantaría saber tu opinión:\n\n"
                 f"⭐⭐⭐⭐⭐ (5 estrellas - Excelente)\n"
                 f"⭐⭐⭐⭐ (4 estrellas - Muy bien)\n"
@@ -166,53 +218,105 @@ async def job_encuesta_post_venta():
         logger.error(f"Error en job_encuesta_post_venta: {e}")
 
 
-def inicializar_scheduler():
-    """Inicializa el scheduler con las tareas automáticas."""
+async def job_seguimientos_programados():
+    """Envía seguimientos programados dinámicamente (ej: 'escríbeme en 4 minutos')."""
     try:
-        # Job 1: Seguimiento 1 día - todos los días a las 12:00 PM
+        logger.info("📅 Ejecutando: Seguimientos programados")
+        seguimientos = await obtener_seguimientos_programados()
+
+        if not seguimientos:
+            logger.debug("No hay seguimientos programados pendientes")
+            return
+
+        for seg in seguimientos:
+            mensaje = seg.mensaje_personalizado or (
+                f"Hola {seg.nombre or 'che'}! 👋\n\n"
+                f"Como te lo prometí, acá estoy.\n\n"
+                f"¿Qué te puedo ayudar?"
+            )
+
+            exito = await proveedor.enviar_mensaje(seg.telefono, mensaje)
+            if exito:
+                await marcar_seguimiento_programado_enviado(seg.id)
+                logger.info(f"✓ Seguimiento programado enviado a {seg.telefono}")
+            else:
+                logger.error(f"✗ Fallo envío a {seg.telefono}")
+
+    except Exception as e:
+        logger.error(f"Error en job_seguimientos_programados: {e}")
+
+
+# ════════════════════════════════════════════════════════════════
+# INICIALIZACIÓN DEL SCHEDULER
+# ════════════════════════════════════════════════════════════════
+
+def inicializar_scheduler():
+    """Inicializa el scheduler con todas las tareas automáticas."""
+    try:
+        # Job 0: Seguimiento MISMO DÍA - 3 horas después del contacto (ejecutar cada hora para buscar)
         scheduler.add_job(
-            job_seguimiento_1dia,
-            CronTrigger(hour=12, minute=0, timezone='America/Asuncion'),
+            _sync_wrapper(job_seguimiento_mismo_dia),
+            CronTrigger(hour=15, minute=0, timezone='America/Asuncion'),  # 3 PM
+            id='seguimiento_mismo_dia',
+            name='Seguimiento MISMO DÍA',
+            replace_existing=True
+        )
+        logger.info("✓ Job 'Seguimiento MISMO DÍA' programado (15:00 / 3 PM)")
+
+        # Job 1: Seguimiento 1 día - todos los días a las 10:00 AM
+        scheduler.add_job(
+            _sync_wrapper(job_seguimiento_1dia),
+            CronTrigger(hour=10, minute=0, timezone='America/Asuncion'),
             id='seguimiento_1dia',
             name='Seguimiento 1 día',
             replace_existing=True
         )
-        logger.info("✓ Job 'Seguimiento 1 día' programado (12:00 PM)")
+        logger.info("✓ Job 'Seguimiento 1 día' programado (10:00 AM)")
 
-        # Job 2: Seguimiento 3 días - todos los días a las 12:00 PM
+        # Job 2: Seguimiento 3 días - todos los días a las 14:00 (2 PM)
         scheduler.add_job(
-            job_seguimiento_3dias,
-            CronTrigger(hour=12, minute=0, timezone='America/Asuncion'),
+            _sync_wrapper(job_seguimiento_3dias),
+            CronTrigger(hour=14, minute=0, timezone='America/Asuncion'),
             id='seguimiento_3dias',
             name='Seguimiento 3 días',
             replace_existing=True
         )
-        logger.info("✓ Job 'Seguimiento 3 días' programado (12:00 PM)")
+        logger.info("✓ Job 'Seguimiento 3 días' programado (14:00 / 2 PM)")
 
         # Job 3: Promo domingo - todos los domingos a las 16:00 (4 PM)
         scheduler.add_job(
-            job_promo_domingo,
+            _sync_wrapper(job_promo_domingo),
             CronTrigger(day_of_week=6, hour=16, minute=0, timezone='America/Asuncion'),
             id='promo_domingo',
             name='Promos domingo',
             replace_existing=True
         )
-        logger.info("✓ Job 'Promos domingo' programado (domingo 4:00 PM)")
+        logger.info("✓ Job 'Promos domingo' programado (domingo 16:00 / 4 PM)")
 
-        # Job 4: Encuesta post-venta - cada hora (busca pedidos de 2h atrás)
+        # Job 4: Encuesta post-venta - cada hora a las :15
         scheduler.add_job(
-            job_encuesta_post_venta,
-            CronTrigger(minute=15, timezone='America/Asuncion'),  # cada hora a las :15
+            _sync_wrapper(job_encuesta_post_venta),
+            CronTrigger(minute=15, timezone='America/Asuncion'),
             id='encuesta_post_venta',
             name='Encuesta post-venta',
             replace_existing=True
         )
         logger.info("✓ Job 'Encuesta post-venta' programado (cada hora a :15)")
 
+        # Job 5: Seguimientos programados dinámicamente - cada 5 minutos para no perder ninguno
+        scheduler.add_job(
+            _sync_wrapper(job_seguimientos_programados),
+            CronTrigger(minute='*/5', timezone='America/Asuncion'),
+            id='seguimientos_programados',
+            name='Seguimientos programados',
+            replace_existing=True
+        )
+        logger.info("✓ Job 'Seguimientos programados' programado (cada 5 minutos)")
+
         # Iniciar el scheduler
         if not scheduler.running:
             scheduler.start()
-            logger.info("✓ Scheduler iniciado")
+            logger.info("✓✓✓ SCHEDULER INICIADO CORRECTAMENTE ✓✓✓")
 
     except Exception as e:
         logger.error(f"Error inicializando scheduler: {e}")

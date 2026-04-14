@@ -37,10 +37,17 @@ def obtener_credenciales_shopify() -> tuple[str, str] | None:
     shop_name = os.getenv("SHOPIFY_SHOP_NAME")
 
     # Si no están en env, leer desde config/shopify.yaml (fallback local)
-    if not (access_token and shop_name):
+    # Ignorar valores que contienen "${...}" (placeholders de entorno)
+    if not access_token:
         config = cargar_config_shopify()
-        shop_name = shop_name or config.get("shop_name")
-        access_token = access_token or config.get("access_token")
+        yaml_token = config.get("access_token", "")
+        # Usar el token del YAML solo si no contiene "${" (placeholder)
+        if yaml_token and "${" not in yaml_token:
+            access_token = yaml_token
+
+    if not shop_name:
+        config = cargar_config_shopify()
+        shop_name = config.get("shop_name")
 
     if not shop_name or not access_token:
         logger.error("❌ Credenciales de Shopify incompletas. Configura SHOPIFY_SHOP_NAME y SHOPIFY_ACCESS_TOKEN")

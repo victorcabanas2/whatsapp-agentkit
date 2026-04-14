@@ -141,6 +141,7 @@ class Lead(Base):
     productos_comprados_previos: Mapped[str] = mapped_column(Text, nullable=True)
     historial_previo_resumen: Mapped[str] = mapped_column(Text, nullable=True)
 
+    seguimiento_mismo_dia_enviado: Mapped[bool] = mapped_column(default=False, nullable=False)
     seguimiento_1dia_enviado: Mapped[bool] = mapped_column(default=False, nullable=False)
     seguimiento_3dias_enviado: Mapped[bool] = mapped_column(default=False, nullable=False)
     en_manos_humanas: Mapped[bool] = mapped_column(default=False, nullable=False)
@@ -272,6 +273,36 @@ class Auditoria(Base):
     def __repr__(self):
         status = "❌" if self.error else "✅"
         return f"{status} <Auditoria {self.tabla}.{self.operacion} id={self.registro_id} {self.timestamp}>"
+
+
+class SeguimientoProgramado(Base):
+    """Modelo para seguimientos programados dinámicamente (ej: 'escríbeme en 4 minutos')."""
+    __tablename__ = "seguimientos_programados"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telefono: Mapped[str] = mapped_column(String(50), ForeignKey("leads.telefono", ondelete="CASCADE"), index=True, nullable=False)
+    nombre: Mapped[str] = mapped_column(String(100), nullable=True)
+
+    # Detalles del seguimiento
+    momento_programado: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)  # Cuándo enviar
+    mensaje_personalizado: Mapped[str] = mapped_column(Text, nullable=True)  # Mensaje personalizado (si lo hay)
+
+    # Control de envío
+    fue_enviado: Mapped[bool] = mapped_column(default=False, nullable=False, index=True)
+    fecha_envio_real: Mapped[datetime] = mapped_column(DateTime, nullable=True)  # Cuándo se envió realmente
+
+    # Auditoría
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    contexto_original: Mapped[str] = mapped_column(Text, nullable=True)  # JSON con contexto (para debugging)
+
+    __table_args__ = (
+        Index("ix_seguimiento_programado_momento", "momento_programado"),
+        Index("ix_seguimiento_programado_telefono_enviado", "telefono", "fue_enviado"),
+    )
+
+    def __repr__(self):
+        status = "✅" if self.fue_enviado else "⏰"
+        return f"{status} <SeguimientoProgramado {self.telefono} → {self.momento_programado}>"
 
 
 async def inicializar_db():
@@ -1454,6 +1485,139 @@ async def marcar_encuesta_enviada(pedido_id: int):
         if pedido:
             pedido.encuesta_enviada = True
             await session.commit()
+
+
+# ════════════════════════════════════════════════════════════
+# SEGUIMIENTO MISMO DÍA
+# ════════════════════════════════════════════════════════════
+
+async def obtener_leads_sin_respuesta_mismo_dia() -> list[Lead]:
+    """
+    Obtiene leads que fueron contactados hoy hace 3+ horas y no respondieron.
+    Se envía seguimiento mismo día para reactivar la conversación.
+    """
+    async with async_session() as session:
+        hace_3h = datetime.utcnow() - timedelta(hours=3)
+        hoy_00h = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+        query = (
+            select(Lead)
+            .where(Lead.primer_contacto >= hoy_00h)  # Contactados hoy
+            .where(Lead.primer_contacto <= hace_3h)   # Hace 3+ horas
+            .where(Lead.seguimiento_mismo_dia_enviado == False)  # No se envió aún
+            .where(Lead.fue_cliente == False)  # No son clientes (todavía)
+            .order_by(Lead.primer_contacto)
+        )
+        result = await session.execute(query)
+        return result.scalars().all()
+
+
+async def marcar_seguimiento_mismo_dia(telefono: str):
+    """Marca que se envió el seguimiento de mismo día."""
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+        if lead:
+            lead.seguimiento_mismo_dia_enviado = True
+            await session.commit()
+
+
+# ════════════════════════════════════════════════════════════
+# SEGUIMIENTOS PROGRAMADOS DINÁMICOS
+# ════════════════════════════════════════════════════════════
+
+async def programar_seguimiento_dinamico(
+    telefono: str,
+    momento_programado: datetime,
+    nombre: str = None,
+    mensaje_personalizado: str = None,
+    contexto: dict = None
+) -> bool:
+    """
+    Programa un seguimiento dinámico para un cliente.
+    Usado cuando el cliente dice "escríbeme en 4 minutos", etc.
+
+    Args:
+        telefono: Número de teléfono del cliente
+        momento_programado: Cuándo enviar el mensaje (datetime)
+        nombre: Nombre del cliente (para incluir en mensaje)
+        mensaje_personalizado: Mensaje personalizado (si es None, se usa genérico)
+        contexto: Contexto JSON para debugging
+
+    Returns:
+        True si se programó correctamente, False en caso contrario
+    """
+    try:
+        async with async_session() as session:
+            # Verificar que el lead existe
+            query = select(Lead).where(Lead.telefono == telefono)
+            result = await session.execute(query)
+            lead = result.scalar_one_or_none()
+
+            if not lead:
+                logger.warning(f"❌ Lead {telefono} no existe para programar seguimiento")
+                return False
+
+            # Crear el seguimiento programado
+            seguimiento = SeguimientoProgramado(
+                telefono=telefono,
+                nombre=nombre or lead.nombre,
+                momento_programado=momento_programado,
+                mensaje_personalizado=mensaje_personalizado,
+                contexto=json.dumps(contexto or {})
+            )
+
+            session.add(seguimiento)
+            await session.commit()
+
+            logger.info(f"✓ Seguimiento programado para {telefono} en {momento_programado}")
+            return True
+
+    except Exception as e:
+        logger.error(f"Error programando seguimiento: {e}")
+        return False
+
+
+async def obtener_seguimientos_programados() -> list[SeguimientoProgramado]:
+    """
+    Obtiene todos los seguimientos programados que están vencidos (hora de enviar ya llegó).
+    Los devuelve en orden de momento_programado.
+    """
+    async with async_session() as session:
+        ahora = datetime.utcnow()
+
+        query = (
+            select(SeguimientoProgramado)
+            .where(SeguimientoProgramado.fue_enviado == False)
+            .where(SeguimientoProgramado.momento_programado <= ahora)
+            .order_by(SeguimientoProgramado.momento_programado)
+        )
+        result = await session.execute(query)
+        return result.scalars().all()
+
+
+async def marcar_seguimiento_programado_enviado(seguimiento_id: int) -> bool:
+    """Marca un seguimiento programado como enviado."""
+    try:
+        async with async_session() as session:
+            query = select(SeguimientoProgramado).where(SeguimientoProgramado.id == seguimiento_id)
+            result = await session.execute(query)
+            seguimiento = result.scalar_one_or_none()
+
+            if seguimiento:
+                seguimiento.fue_enviado = True
+                seguimiento.fecha_envio_real = datetime.utcnow()
+                await session.commit()
+                logger.info(f"✓ Seguimiento programado #{seguimiento_id} marcado como enviado")
+                return True
+
+        logger.warning(f"❌ Seguimiento programado #{seguimiento_id} no encontrado")
+        return False
+
+    except Exception as e:
+        logger.error(f"Error marcando seguimiento como enviado: {e}")
+        return False
 
 
 async def guardar_respuesta_encuesta(

@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, HTTPException, Cookie
 from fastapi.responses import PlainTextResponse, JSONResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from sqlalchemy import select, desc, func
 
@@ -313,6 +314,15 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Habilitar CORS para peticiones del dashboard local
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Agregar routers
 app.include_router(stock_router)
 
@@ -530,9 +540,21 @@ async def webhook_handler(request: Request):
                 )
 
                 # Extraer imagen si Claude la incluyó en la respuesta
-                from agent.brain import extraer_imagen_de_respuesta, obtener_url_imagen
+                from agent.brain import extraer_imagen_de_respuesta, obtener_url_imagen, detectar_y_programar_seguimiento
                 respuesta_limpia, product_id = extraer_imagen_de_respuesta(respuesta_raw)
                 url_imagen_producto = obtener_url_imagen(product_id) if product_id else None
+
+                # ═══════════════════════════════════════════════════════════
+                # DETECTAR Y PROGRAMAR SEGUIMIENTOS DINÁMICOS
+                # ═══════════════════════════════════════════════════════════
+                # Si el cliente pidió un seguimiento ("escríbeme en 4 minutos"), programarlo automático
+                respuesta_con_confirmacion = await detectar_y_programar_seguimiento(
+                    mensaje_usuario=msg.texto,
+                    respuesta_belén=respuesta_limpia,
+                    telefono=msg.telefono,
+                    nombre_cliente=lead.nombre
+                )
+                respuesta_limpia = respuesta_con_confirmacion
 
                 # Guardar mensaje del usuario (con imagen_url si existe)
                 if msg.imagen_url:
@@ -1571,6 +1593,36 @@ async def admin_enviar_masivo(request: Request):
     except Exception as e:
         logger.error(f"Error en enviar_masivo: {e}", exc_info=True)
         return {"exitosos": 0, "fallidos": 0, "total": 0, "error": str(e)}
+
+
+@app.post("/api/admin/enviar-a-numeros")
+async def admin_enviar_a_numeros(request: Request):
+    """Envía mensaje a números específicos (JSON)."""
+    try:
+        body = await request.json()
+        mensaje = body.get('mensaje', '')
+        telefonos_list = body.get('telefonos', [])
+
+        if not telefonos_list or not mensaje:
+            return {"exitosos": 0, "fallidos": len(telefonos_list), "total": len(telefonos_list)}
+
+        proveedor = obtener_proveedor()
+        exitosos, fallidos = 0, 0
+
+        for telefono in telefonos_list:
+            try:
+                exito = await proveedor.enviar_mensaje(telefono.strip(), mensaje)
+                if exito:
+                    exitosos += 1
+                else:
+                    fallidos += 1
+            except:
+                fallidos += 1
+
+        return {"exitosos": exitosos, "fallidos": fallidos, "total": len(telefonos_list)}
+    except Exception as e:
+        logger.error(f"Error enviar_a_numeros: {e}")
+        return {"exitosos": 0, "fallidos": 1, "total": 1}
 
 
 @app.post("/api/admin/enviar-imagen")

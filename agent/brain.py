@@ -10,9 +10,12 @@ import os
 import json
 import yaml
 import logging
+import re
+from datetime import datetime, timedelta
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
 from agent.shopify import obtener_stock_producto, obtener_stocks_multiples, cargar_config_shopify
+from agent.memory import programar_seguimiento_dinamico
 
 load_dotenv()
 logger = logging.getLogger("agentkit")
@@ -165,6 +168,116 @@ def mapear_anuncio_a_producto(anuncio_id: str) -> str:
 
     # Si no encuentra coincidencia, retornar el ID original (Claude lo interpretará)
     return anuncio_id
+
+
+async def detectar_y_programar_seguimiento(
+    mensaje_usuario: str,
+    respuesta_belén: str,
+    telefono: str,
+    nombre_cliente: str = None
+) -> str:
+    """
+    Detecta si el usuario pidió un seguimiento dinámico ("escríbeme en 4 minutos").
+    Si lo detecta, programa automáticamente el seguimiento y modifica la respuesta.
+
+    Args:
+        mensaje_usuario: El mensaje del usuario
+        respuesta_belén: La respuesta que generó Belén
+        telefono: Número de teléfono del cliente
+        nombre_cliente: Nombre del cliente (si se conoce)
+
+    Returns:
+        La respuesta de Belén, potencialmente modificada para aclarar que se va a contactar
+    """
+    try:
+        # Palabras clave para detectar solicitud de seguimiento
+        palabras_clave = [
+            "escríbeme",
+            "escribeme",
+            "escribí",
+            "escribi",
+            "me escribís",
+            "me escribes",
+            "me escriba",
+            "me avisa",
+            "avisame",
+            "avísame",
+            "contáctate",
+            "contactate",
+            "vuelve a escribir",
+            "vuelvo",
+        ]
+
+        # Patrones para detectar tiempo (minutos, horas, etc)
+        # Matches: "en 4 minutos", "en 2 horas", "en media hora", "dentro de 30 minutos", etc
+        patron_tiempo = r'en\s+(?:(\d+)\s*(minuto|hora|segundo|seg|min|h|hora)s?|media\s+hora|un\s+minuto|una\s+hora)'
+
+        mensaje_lower = mensaje_usuario.lower().strip()
+        respuesta_lower = respuesta_belén.lower().strip()
+
+        # Buscar si el usuario pidió un seguimiento
+        tiene_palabra_clave = any(palabra in mensaje_lower for palabra in palabras_clave)
+
+        if not tiene_palabra_clave:
+            return respuesta_belén  # No hay solicitud de seguimiento
+
+        # Si tiene palabra clave, buscar el tiempo
+        match_tiempo = re.search(patron_tiempo, mensaje_lower)
+
+        if not match_tiempo:
+            # Tiene palabra clave pero no especifica tiempo exactamente
+            # Dejar que Belén maneje la respuesta (podría ser "escríbeme cuando puedas")
+            return respuesta_belén
+
+        # Extraer cantidad de tiempo
+        cantidad_str = match_tiempo.group(1)
+        unidad = match_tiempo.group(2).lower() if match_tiempo.group(2) else "minuto"
+
+        try:
+            cantidad = int(cantidad_str) if cantidad_str else 1
+
+            # Convertir a minutos
+            if "hora" in unidad or unidad == "h":
+                minutos = cantidad * 60
+            elif "segundo" in unidad or unidad in ["seg", "s"]:
+                minutos = max(1, cantidad // 60)  # Mínimo 1 minuto
+            else:  # minuto, min
+                minutos = max(1, cantidad)
+
+            # Calcular cuándo enviar
+            momento_programado = datetime.utcnow() + timedelta(minutes=minutos)
+
+            logger.info(f"📅 Detectado pedido de seguimiento en {minutos} minutos para {telefono}")
+
+            # Programar el seguimiento
+            exito = await programar_seguimiento_dinamico(
+                telefono=telefono,
+                momento_programado=momento_programado,
+                nombre=nombre_cliente,
+                contexto={
+                    "tipo": "seguimiento_dinamico_cliente",
+                    "minutos_solicitados": minutos,
+                    "momento_solicitado_en": match_tiempo.group(0),
+                    "respuesta_belén_original": respuesta_belén[:100]  # Primeros 100 chars
+                }
+            )
+
+            if exito:
+                logger.info(f"✅ Seguimiento programado exitosamente para {telefono}")
+                # Modificar la respuesta para confirmar
+                respuesta_modificada = respuesta_belén + f"\n\n✅ Dale, anota que te escribo en {minutos} minuto(s)!"
+                return respuesta_modificada
+            else:
+                logger.warning(f"⚠️ No se pudo programar seguimiento para {telefono}")
+                return respuesta_belén
+
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"Error parsing tiempo: {e}")
+            return respuesta_belén
+
+    except Exception as e:
+        logger.error(f"Error en detectar_y_programar_seguimiento: {e}")
+        return respuesta_belén  # Retornar respuesta original si hay error
 
 
 def detectar_confirmacion_pago(mensaje: str) -> bool:
