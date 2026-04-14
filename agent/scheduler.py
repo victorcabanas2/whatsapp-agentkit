@@ -42,22 +42,19 @@ proveedor = obtener_proveedor()
 
 # WRAPPERS SYNC para APScheduler — convierte async → sync
 def _sync_wrapper(async_func):
-    """Convierte una función async a sync para APScheduler."""
+    """Convierte una función async a sync para APScheduler sin cerrar loops."""
     def wrapper(*args, **kwargs):
         try:
-            # Usar asyncio.run() que maneja loops correctamente
-            return asyncio.run(async_func(*args, **kwargs))
-        except RuntimeError as e:
-            # Si hay conflicto de loops, intentar en un nuevo loop
-            if "Event loop is closed" in str(e) or "attached to a different loop" in str(e):
-                logger.warning(f"⚠️ Loop conflict, retrying with new loop: {e}")
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(async_func(*args, **kwargs))
-                finally:
-                    loop.close()
-            raise
+            return loop.run_until_complete(async_func(*args, **kwargs))
+        except RuntimeError:
+            # Si no hay event loop, crear uno pero NO cerrarlo
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(async_func(*args, **kwargs))
     return wrapper
 
 
@@ -238,21 +235,25 @@ async def job_seguimientos_programados():
             return
 
         for seg in seguimientos:
-            mensaje = seg.mensaje_personalizado or (
-                f"Hola {seg.nombre or 'che'}! 👋\n\n"
-                f"Como te lo prometí, acá estoy.\n\n"
-                f"¿Qué te puedo ayudar?"
-            )
+            try:
+                mensaje = seg.mensaje_personalizado or (
+                    f"Hola {seg.nombre or 'che'}! 👋\n\n"
+                    f"Como te lo prometí, acá estoy.\n\n"
+                    f"¿Qué te puedo ayudar?"
+                )
 
-            exito = await proveedor.enviar_mensaje(seg.telefono, mensaje)
-            if exito:
-                await marcar_seguimiento_programado_enviado(seg.id)
-                logger.info(f"✓ Seguimiento programado enviado a {seg.telefono}")
-            else:
-                logger.error(f"✗ Fallo envío a {seg.telefono}")
+                exito = await proveedor.enviar_mensaje(seg.telefono, mensaje)
+                if exito:
+                    await marcar_seguimiento_programado_enviado(seg.id)
+                    logger.info(f"✓ Seguimiento programado enviado a {seg.telefono} (ID: {seg.id})")
+                else:
+                    logger.error(f"✗ Fallo envío a {seg.telefono} (ID: {seg.id})")
+            except Exception as e:
+                logger.error(f"Error enviando seguimiento a {seg.telefono}: {e}", exc_info=False)
+                continue
 
     except Exception as e:
-        logger.error(f"Error en job_seguimientos_programados: {e}")
+        logger.error(f"Error en job_seguimientos_programados: {e}", exc_info=False)
 
 
 # ════════════════════════════════════════════════════════════════
@@ -312,15 +313,17 @@ def inicializar_scheduler():
         )
         logger.info("✓ Job 'Encuesta post-venta' programado (cada hora a :15)")
 
-        # Job 5: Seguimientos programados dinámicamente - cada 30 segundos (urgente, usuario espera 1-2 min)
+        # Job 5: Seguimientos programados dinámicamente - cada 120 segundos (2 min)
+        # Nota: 30 segundos causaba conflictos de event loop. 2 minutos es suficiente para
+        # "escríbeme en 3 minutos", "llamame en 1 minuto", etc.
         scheduler.add_job(
             _sync_wrapper(job_seguimientos_programados),
-            IntervalTrigger(seconds=30),
+            IntervalTrigger(seconds=120),
             id='seguimientos_programados',
             name='Seguimientos programados',
             replace_existing=True
         )
-        logger.info("✓ Job 'Seguimientos programados' programado (cada 30 segundos)")
+        logger.info("✓ Job 'Seguimientos programados' programado (cada 120 segundos)")
 
         # Iniciar el scheduler
         if not scheduler.running:
