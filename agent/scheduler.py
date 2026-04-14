@@ -1,21 +1,20 @@
-# agent/scheduler.py — Scheduler para seguimientos automáticos
+# agent/scheduler.py — Tareas de background 100% async
 # Generado por AgentKit
 
 """
-Ejecuta tareas automáticas en background:
+Ejecuta tareas automáticas en background usando asyncio (sin APScheduler):
 - Seguimiento a clientes MISMO DÍA de contacto inicial
 - Seguimiento a clientes 1 día después de contacto
 - Seguimiento a clientes 3 días después de contacto
-- Recordatorio de promo cada domingo (solo si hay carrito abandonado)
+- Recordatorio de promo cada domingo
 - Seguimientos programados dinámicamente por el cliente ("escríbeme en 4 minutos")
+
+VENTAJA: 100% async, sin conflictos de event loops, sin threads de APScheduler.
 """
 
 import logging
 import asyncio
 from datetime import datetime
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
 import pytz
 
 from agent.memory import (
@@ -35,31 +34,12 @@ from agent.memory import (
 from agent.providers import obtener_proveedor
 
 logger = logging.getLogger("agentkit.scheduler")
-
-scheduler = BackgroundScheduler(timezone=pytz.timezone('America/Asuncion'))
 proveedor = obtener_proveedor()
-
-
-# WRAPPERS SYNC para APScheduler — convierte async → sync
-def _sync_wrapper(async_func):
-    """Convierte una función async a sync para APScheduler sin cerrar loops."""
-    def wrapper(*args, **kwargs):
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            return loop.run_until_complete(async_func(*args, **kwargs))
-        except RuntimeError:
-            # Si no hay event loop, crear uno pero NO cerrarlo
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            return loop.run_until_complete(async_func(*args, **kwargs))
-    return wrapper
+TZ = pytz.timezone('America/Asuncion')
 
 
 # ════════════════════════════════════════════════════════════════
-# JOBS AUTOMÁTICOS — Seguimientos rutinarios
+# FUNCIONES ASYNC — Cada una es una tarea independiente
 # ════════════════════════════════════════════════════════════════
 
 async def job_seguimiento_mismo_dia():
@@ -87,7 +67,7 @@ async def job_seguimiento_mismo_dia():
                 logger.error(f"✗ Fallo envío a {lead.telefono}")
 
     except Exception as e:
-        logger.error(f"Error en job_seguimiento_mismo_dia: {e}")
+        logger.error(f"Error en job_seguimiento_mismo_dia: {e}", exc_info=False)
 
 
 async def job_seguimiento_1dia():
@@ -115,7 +95,7 @@ async def job_seguimiento_1dia():
                 logger.error(f"✗ Fallo envío a {lead.telefono}")
 
     except Exception as e:
-        logger.error(f"Error en job_seguimiento_1dia: {e}")
+        logger.error(f"Error en job_seguimiento_1dia: {e}", exc_info=False)
 
 
 async def job_seguimiento_3dias():
@@ -144,7 +124,7 @@ async def job_seguimiento_3dias():
                 logger.error(f"✗ Fallo envío a {lead.telefono}")
 
     except Exception as e:
-        logger.error(f"Error en job_seguimiento_3dias: {e}")
+        logger.error(f"Error en job_seguimiento_3dias: {e}", exc_info=False)
 
 
 async def job_promo_domingo():
@@ -187,7 +167,7 @@ async def job_promo_domingo():
                 logger.error(f"✗ Fallo envío a {telefono}")
 
     except Exception as e:
-        logger.error(f"Error en job_promo_domingo: {e}")
+        logger.error(f"Error en job_promo_domingo: {e}", exc_info=False)
 
 
 async def job_encuesta_post_venta():
@@ -221,18 +201,20 @@ async def job_encuesta_post_venta():
                 logger.error(f"✗ Fallo envío encuesta a {pedido.telefono}")
 
     except Exception as e:
-        logger.error(f"Error en job_encuesta_post_venta: {e}")
+        logger.error(f"Error en job_encuesta_post_venta: {e}", exc_info=False)
 
 
 async def job_seguimientos_programados():
     """Envía seguimientos programados dinámicamente (ej: 'escríbeme en 4 minutos')."""
     try:
-        logger.info("📅 Ejecutando: Seguimientos programados")
+        logger.debug("📅 Ejecutando: Seguimientos programados")
         seguimientos = await obtener_seguimientos_programados()
 
         if not seguimientos:
             logger.debug("No hay seguimientos programados pendientes")
             return
+
+        logger.info(f"Found {len(seguimientos)} pending programmed follow-ups")
 
         for seg in seguimientos:
             try:
@@ -257,85 +239,105 @@ async def job_seguimientos_programados():
 
 
 # ════════════════════════════════════════════════════════════════
-# INICIALIZACIÓN DEL SCHEDULER
+# BACKGROUND TASKS PARA FASTAPI
 # ════════════════════════════════════════════════════════════════
 
-def inicializar_scheduler():
-    """Inicializa el scheduler con todas las tareas automáticas."""
-    try:
-        # Job 0: Seguimiento MISMO DÍA - 3 horas después del contacto (ejecutar cada hora para buscar)
-        scheduler.add_job(
-            _sync_wrapper(job_seguimiento_mismo_dia),
-            CronTrigger(hour=15, minute=0, timezone='America/Asuncion'),  # 3 PM
-            id='seguimiento_mismo_dia',
-            name='Seguimiento MISMO DÍA',
-            replace_existing=True
-        )
-        logger.info("✓ Job 'Seguimiento MISMO DÍA' programado (15:00 / 3 PM)")
+async def task_seguimientos_programados_loop():
+    """Loop infinito que ejecuta seguimientos cada 30 segundos."""
+    while True:
+        try:
+            await job_seguimientos_programados()
+        except Exception as e:
+            logger.error(f"Error en loop de seguimientos: {e}", exc_info=False)
 
-        # Job 1: Seguimiento 1 día - todos los días a las 10:00 AM
-        scheduler.add_job(
-            _sync_wrapper(job_seguimiento_1dia),
-            CronTrigger(hour=10, minute=0, timezone='America/Asuncion'),
-            id='seguimiento_1dia',
-            name='Seguimiento 1 día',
-            replace_existing=True
-        )
-        logger.info("✓ Job 'Seguimiento 1 día' programado (10:00 AM)")
-
-        # Job 2: Seguimiento 3 días - todos los días a las 14:00 (2 PM)
-        scheduler.add_job(
-            _sync_wrapper(job_seguimiento_3dias),
-            CronTrigger(hour=14, minute=0, timezone='America/Asuncion'),
-            id='seguimiento_3dias',
-            name='Seguimiento 3 días',
-            replace_existing=True
-        )
-        logger.info("✓ Job 'Seguimiento 3 días' programado (14:00 / 2 PM)")
-
-        # Job 3: Promo domingo - todos los domingos a las 16:00 (4 PM)
-        scheduler.add_job(
-            _sync_wrapper(job_promo_domingo),
-            CronTrigger(day_of_week=6, hour=16, minute=0, timezone='America/Asuncion'),
-            id='promo_domingo',
-            name='Promos domingo',
-            replace_existing=True
-        )
-        logger.info("✓ Job 'Promos domingo' programado (domingo 16:00 / 4 PM)")
-
-        # Job 4: Encuesta post-venta - cada hora a las :15
-        scheduler.add_job(
-            _sync_wrapper(job_encuesta_post_venta),
-            CronTrigger(minute=15, timezone='America/Asuncion'),
-            id='encuesta_post_venta',
-            name='Encuesta post-venta',
-            replace_existing=True
-        )
-        logger.info("✓ Job 'Encuesta post-venta' programado (cada hora a :15)")
-
-        # Job 5: Seguimientos programados dinámicamente - cada 120 segundos (2 min)
-        # Nota: 30 segundos causaba conflictos de event loop. 2 minutos es suficiente para
-        # "escríbeme en 3 minutos", "llamame en 1 minuto", etc.
-        scheduler.add_job(
-            _sync_wrapper(job_seguimientos_programados),
-            IntervalTrigger(seconds=120),
-            id='seguimientos_programados',
-            name='Seguimientos programados',
-            replace_existing=True
-        )
-        logger.info("✓ Job 'Seguimientos programados' programado (cada 120 segundos)")
-
-        # Iniciar el scheduler
-        if not scheduler.running:
-            scheduler.start()
-            logger.info("✓✓✓ SCHEDULER INICIADO CORRECTAMENTE ✓✓✓")
-
-    except Exception as e:
-        logger.error(f"Error inicializando scheduler: {e}")
+        await asyncio.sleep(30)
 
 
-def detener_scheduler():
-    """Detiene el scheduler."""
-    if scheduler.running:
-        scheduler.shutdown()
-        logger.info("✓ Scheduler detenido")
+async def task_seguimiento_mismo_dia_loop():
+    """Ejecuta seguimiento mismo día a las 15:00 (3 PM)."""
+    while True:
+        try:
+            ahora = datetime.now(TZ)
+            if ahora.hour == 15 and ahora.minute == 0:
+                await job_seguimiento_mismo_dia()
+                await asyncio.sleep(60)  # Esperar un minuto para no repetir
+            else:
+                await asyncio.sleep(30)
+        except Exception as e:
+            logger.error(f"Error en loop de mismo día: {e}", exc_info=False)
+
+
+async def task_seguimiento_1dia_loop():
+    """Ejecuta seguimiento 1 día a las 10:00 AM."""
+    while True:
+        try:
+            ahora = datetime.now(TZ)
+            if ahora.hour == 10 and ahora.minute == 0:
+                await job_seguimiento_1dia()
+                await asyncio.sleep(60)
+            else:
+                await asyncio.sleep(30)
+        except Exception as e:
+            logger.error(f"Error en loop de 1 día: {e}", exc_info=False)
+
+
+async def task_seguimiento_3dias_loop():
+    """Ejecuta seguimiento 3 días a las 14:00 (2 PM)."""
+    while True:
+        try:
+            ahora = datetime.now(TZ)
+            if ahora.hour == 14 and ahora.minute == 0:
+                await job_seguimiento_3dias()
+                await asyncio.sleep(60)
+            else:
+                await asyncio.sleep(30)
+        except Exception as e:
+            logger.error(f"Error en loop de 3 días: {e}", exc_info=False)
+
+
+async def task_promo_domingo_loop():
+    """Ejecuta promos domingo a las 16:00 (4 PM) solo los domingos."""
+    while True:
+        try:
+            ahora = datetime.now(TZ)
+            es_domingo = ahora.weekday() == 6
+            if es_domingo and ahora.hour == 16 and ahora.minute == 0:
+                await job_promo_domingo()
+                await asyncio.sleep(60)
+            else:
+                await asyncio.sleep(30)
+        except Exception as e:
+            logger.error(f"Error en loop de promo domingo: {e}", exc_info=False)
+
+
+async def task_encuesta_post_venta_loop():
+    """Ejecuta encuesta post-venta cada hora a :15."""
+    while True:
+        try:
+            ahora = datetime.now(TZ)
+            if ahora.minute == 15:
+                await job_encuesta_post_venta()
+                await asyncio.sleep(60)
+            else:
+                await asyncio.sleep(30)
+        except Exception as e:
+            logger.error(f"Error en loop de encuesta: {e}", exc_info=False)
+
+
+def crear_background_tasks() -> list:
+    """Retorna lista de tasks para crear en FastAPI lifespan."""
+    return [
+        asyncio.create_task(task_seguimientos_programados_loop()),
+        asyncio.create_task(task_seguimiento_mismo_dia_loop()),
+        asyncio.create_task(task_seguimiento_1dia_loop()),
+        asyncio.create_task(task_seguimiento_3dias_loop()),
+        asyncio.create_task(task_promo_domingo_loop()),
+        asyncio.create_task(task_encuesta_post_venta_loop()),
+    ]
+
+
+def cancelar_background_tasks(tasks: list):
+    """Cancela todas las background tasks."""
+    for task in tasks:
+        if not task.done():
+            task.cancel()

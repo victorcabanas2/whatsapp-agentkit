@@ -58,7 +58,7 @@ from agent.memory import (
     Auditoria,
 )
 from agent.providers import obtener_proveedor
-from agent.scheduler import inicializar_scheduler, detener_scheduler
+from agent.scheduler import crear_background_tasks, cancelar_background_tasks
 
 # Cargar variables de entorno
 load_dotenv()
@@ -279,9 +279,9 @@ async def lifespan(app: FastAPI):
         if pausados:
             logger.info(f"✓ Sincronizados {len(pausados)} chats pausados desde BD")
 
-    # Inicializar scheduler de seguimientos
-    inicializar_scheduler()
-    logger.info("✓ Scheduler de seguimientos iniciado")
+    # Inicializar background tasks (100% async, sin APScheduler)
+    background_tasks = crear_background_tasks()
+    logger.info(f"✓ {len(background_tasks)} tareas de background iniciadas (async)")
 
     # Sincronizar imágenes de productos desde Shopify
     try:
@@ -301,8 +301,8 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    logger.info("🛑 Deteniendo scheduler...")
-    detener_scheduler()
+    logger.info("🛑 Cancelando tareas de background...")
+    cancelar_background_tasks(background_tasks)
     logger.info("🛑 Servidor detenido")
 
 
