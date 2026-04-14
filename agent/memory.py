@@ -305,6 +305,29 @@ class SeguimientoProgramado(Base):
         return f"{status} <SeguimientoProgramado {self.telefono} → {self.momento_programado}>"
 
 
+async def ejecutar_migraciones():
+    """Ejecuta migraciones necesarias para nuevas columnas/tablas."""
+    async with engine.begin() as conn:
+        # Migración: Agregar columna seguimiento_mismo_dia_enviado si no existe
+        try:
+            # PostgreSQL: checar si la columna existe
+            result = await conn.execute(
+                text("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name='leads' AND column_name='seguimiento_mismo_dia_enviado'
+                """)
+            )
+            if not result.fetchone():
+                logger.info("🔄 Agregando columna seguimiento_mismo_dia_enviado...")
+                await conn.execute(
+                    text("ALTER TABLE leads ADD COLUMN seguimiento_mismo_dia_enviado BOOLEAN DEFAULT FALSE NOT NULL")
+                )
+                logger.info("✓ Columna seguimiento_mismo_dia_enviado agregada correctamente")
+        except Exception as e:
+            logger.warning(f"⚠️ Error en migración de seguimiento_mismo_dia_enviado: {e}")
+            # Si es SQLite, el error es diferente — ignorar
+
+
 async def inicializar_db():
     """Crea las tablas si no existen y habilita Foreign Keys."""
     async with engine.begin() as conn:
@@ -323,6 +346,9 @@ async def inicializar_db():
                 logger.info("✅ Foreign Keys habilitadas en SQLite")
             else:
                 logger.warning("⚠️ Foreign Keys podrían no estar habilitadas en SQLite")
+
+    # Ejecutar migraciones necesarias
+    await ejecutar_migraciones()
 
 
 # ════════════════════════════════════════════════════════════
