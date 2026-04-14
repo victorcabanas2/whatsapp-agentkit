@@ -44,12 +44,20 @@ proveedor = obtener_proveedor()
 def _sync_wrapper(async_func):
     """Convierte una función async a sync para APScheduler."""
     def wrapper(*args, **kwargs):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(async_func(*args, **kwargs))
-        finally:
-            loop.close()
+            # Usar asyncio.run() que maneja loops correctamente
+            return asyncio.run(async_func(*args, **kwargs))
+        except RuntimeError as e:
+            # Si hay conflicto de loops, intentar en un nuevo loop
+            if "Event loop is closed" in str(e) or "attached to a different loop" in str(e):
+                logger.warning(f"⚠️ Loop conflict, retrying with new loop: {e}")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(async_func(*args, **kwargs))
+                finally:
+                    loop.close()
+            raise
     return wrapper
 
 
