@@ -15,6 +15,7 @@ import asyncio
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 import pytz
 
 from agent.memory import (
@@ -303,15 +304,15 @@ def inicializar_scheduler():
         )
         logger.info("✓ Job 'Encuesta post-venta' programado (cada hora a :15)")
 
-        # Job 5: Seguimientos programados dinámicamente - cada 5 minutos para no perder ninguno
+        # Job 5: Seguimientos programados dinámicamente - cada 30 segundos (urgente, usuario espera 1-2 min)
         scheduler.add_job(
             _sync_wrapper(job_seguimientos_programados),
-            CronTrigger(minute='*/5', timezone='America/Asuncion'),
+            IntervalTrigger(seconds=30),
             id='seguimientos_programados',
             name='Seguimientos programados',
             replace_existing=True
         )
-        logger.info("✓ Job 'Seguimientos programados' programado (cada 5 minutos)")
+        logger.info("✓ Job 'Seguimientos programados' programado (cada 30 segundos)")
 
         # Iniciar el scheduler
         if not scheduler.running:

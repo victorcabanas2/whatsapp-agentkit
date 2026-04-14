@@ -17,7 +17,7 @@ Para producción, puede migrarse fácilmente a PostgreSQL (misma interfaz SQLAlc
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone as tz
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import String, Text, DateTime, select, Integer, desc, Boolean, ForeignKey, CheckConstraint, Index, func, and_, delete, text
@@ -1611,7 +1611,8 @@ async def obtener_seguimientos_programados() -> list[SeguimientoProgramado]:
     Los devuelve en orden de momento_programado.
     """
     async with async_session() as session:
-        ahora = datetime.utcnow()
+        ahora = datetime.now(tz.utc).replace(tzinfo=None)
+        logger.debug(f"🔍 Buscando seguimientos vencidos. Ahora UTC: {ahora}")
 
         query = (
             select(SeguimientoProgramado)
