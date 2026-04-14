@@ -1,0 +1,128 @@
+# Shopify Configuration — Integración con rebody.myshopify.com
+
+shop_name: rebody.myshopify.com
+# Token debe estar en variable de entorno SHOPIFY_ACCESS_TOKEN (no aquí por seguridad)
+access_token: "${SHOPIFY_ACCESS_TOKEN}"
+
+# Product ID mapping: nombre_producto → shopify_product_id
+# Usado para consultar stock en tiempo real
+products:
+  # Masajeadores Theragun
+  theragun_mini:
+    shopify_id: "9157820449026"
+    nombre: "Theragun Mini 3.0"
+
+  theragun_sense:
+    shopify_id: "9204379222274"
+    nombre: "Theragun Sense"
+
+  theragun_pro_plus:
+    shopify_id: "9157817336066"
+    nombre: "Theragun PRO Plus"
+
+  wavesolo:
+    shopify_id: "9204380795138"
+    nombre: "WaveSolo"
+
+  # Botas de Compresión
+  jetboots_prime:
+    shopify_id: "9157822185730"
+    nombre: "JetBoots Prime"
+
+  jetboots_pro_plus:
+    shopify_id: "9200281288962"
+    nombre: "Jetboots Pro Plus"
+
+  # Skincare TheraFace
+  theraface_depuffing_wand:
+    shopify_id: "9157832081666"
+    nombre: "TheraFace Depuffing Wand"
+
+  theraface_pro:
+    shopify_id: "9157826216194"
+    nombre: "TheraFace PRO"
+
+  theraface_mask:
+    shopify_id: "9157826838786"
+    nombre: "TheraFace Mask"
+
+  # Wearables
+  smartgoggles:
+    shopify_id: "9157888049410"
+    nombre: "SmartGoggles 2.0"
+
+  # WHOOP
+  whoop_peak:
+    shopify_id: "9146847002882"
+    nombre: "WHOOP PEAK 5.0"
+
+  whoop_one:
+    shopify_id: "9146858832130"
+    nombre: "WHOOP ONE 5.0"
+
+  whoop_life_mg:
+    shopify_id: "9146830258434"
+    nombre: "WHOOP LIFE MG"
+
+  # WHOOP Bands
+  whoop_bicep_band:
+    shopify_id: "9167729819906"
+    nombre: "Bicep Band 5.0 / MG"
+
+  whoop_coreknit_band:
+    shopify_id: "9167726739714"
+    nombre: "CoreKnit Band 5.0"
+
+  whoop_sportflex_band:
+    shopify_id: "9167730114818"
+    nombre: "SportFlex Band 5.0 / MG"
+
+  whoop_superknit_band:
+    shopify_id: "9167727952130"
+    nombre: "SuperKnit Band 5.0/MG"
+
+  whoop_superknit_luxe_band:
+    shopify_id: "9167741518082"
+    nombre: "SuperKnit Luxe Band 5.0 / MG"
+
+  whoop_leatherluxe_straight:
+    shopify_id: "9167764193538"
+    nombre: "LeatherLuxe Straight Band 5.0 / MG"
+
+  whoop_leatherluxe_tapered:
+    shopify_id: "9167747186946"
+    nombre: "LeatherLuxe Tapered Band 5.0 / MG"
+
+  # WHOOP Accesorios
+  whoop_arm_sleeve:
+    shopify_id: "9167819374850"
+    nombre: "Arm Sleeve Whoop"
+
+  whoop_hydrosleeve:
+    shopify_id: "9167800336642"
+    nombre: "HydroSleeve"
+
+  whoop_cargador_inalambrico:
+    shopify_id: "9167800008962"
+    nombre: "Cargador Inalámbrico 5.0"
+
+  whoop_cargador_basico:
+    shopify_id: "9167778185474"
+    nombre: "Cargador Básico 5.0"
+
+  # FOREO
+  foreo_faq_221:
+    shopify_id: "9309413245186"
+    nombre: "FOREO FAQ™ 221"
+
+  foreo_faq_211:
+    shopify_id: "9309411606786"
+    nombre: "FOREO FAQ™ 211"
+
+  # Therabody Otros
+  recovery_pulse_calf:
+    shopify_id: "9316931174658"
+    nombre: "Therabody RecoveryPulse Calf Sleeve Medium"
+
+# Cache settings
+cache_ttl_seconds: 300  # 5 minutos de caché

@@ -1,0 +1,215 @@
+{
+  "ultima_actualizacion": "2026-04-08T16:32:53",
+  "productos": {
+    "9146830258434": {
+      "id": "9146830258434",
+      "nombre": "WHOOP LIFE MG",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9146847002882": {
+      "id": "9146847002882",
+      "nombre": "WHOOP PEAK 5.0",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9146858832130": {
+      "id": "9146858832130",
+      "nombre": "WHOOP ONE 5.0",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9157817336066": {
+      "id": "9157817336066",
+      "nombre": "Theragun PRO Plus",
+      "stock": 1,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9157820449026": {
+      "id": "9157820449026",
+      "nombre": "Theragun Mini 3.0",
+      "stock": 6,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9204379222274": {
+      "id": "9204379222274",
+      "nombre": "Theragun Sense",
+      "stock": 2,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9157822185730": {
+      "id": "9157822185730",
+      "nombre": "JetBoots Prime",
+      "stock": 3,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9200281288962": {
+      "id": "9200281288962",
+      "nombre": "JetBoots Pro Plus",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9157826216194": {
+      "id": "9157826216194",
+      "nombre": "TheraFace PRO",
+      "stock": 3,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9157826838786": {
+      "id": "9157826838786",
+      "nombre": "TheraFace Mask",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9157832081666": {
+      "id": "9157832081666",
+      "nombre": "TheraFace Depuffing Wand",
+      "stock": 20,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9157888049410": {
+      "id": "9157888049410",
+      "nombre": "SmartGoggles 2.0",
+      "stock": 9,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9204380795138": {
+      "id": "9204380795138",
+      "nombre": "WaveSolo",
+      "stock": 3,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9309411606786": {
+      "id": "9309411606786",
+      "nombre": "FOREO FAQ 211 (Cuello)",
+      "stock": 4,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9309413245186": {
+      "id": "9309413245186",
+      "nombre": "FOREO FAQ 221 (Manos)",
+      "stock": 4,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9316931174658": {
+      "id": "9316931174658",
+      "nombre": "Calf Sleeve",
+      "stock": 3,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "TF0004349-1A20": {
+      "id": "TF0004349-1A20",
+      "nombre": "TheraFace Mask Glo",
+      "stock": 5,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "RT0004289-1A10": {
+      "id": "RT0004289-1A10",
+      "nombre": "ThermBack LED",
+      "stock": 7,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "TB02756-01": {
+      "id": "TB02756-01",
+      "nombre": "Recovery Pulse Arm M",
+      "stock": 2,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "TB03778-01": {
+      "id": "TB03778-01",
+      "nombre": "Recovery Therm Cube",
+      "stock": 2,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "SM0004081-1A30": {
+      "id": "SM0004081-1A30",
+      "nombre": "SleepMask",
+      "stock": 7,
+      "disponible": true,
+      "timestamp": "2026-04-08T16:32:53"
+    },
+    "9146859999234": {
+      "id": "9146859999234",
+      "nombre": "WHOOP Bandas CoreKnit",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-09T11:30:00"
+    },
+    "9146860111345": {
+      "id": "9146860111345",
+      "nombre": "WHOOP Bandas SuperKnit",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-09T11:30:00"
+    },
+    "9146860222456": {
+      "id": "9146860222456",
+      "nombre": "WHOOP Bandas Bicep",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-09T11:30:00"
+    },
+    "9146860333567": {
+      "id": "9146860333567",
+      "nombre": "WHOOP Bandas SportFlex",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-09T11:30:00"
+    },
+    "9146860444678": {
+      "id": "9146860444678",
+      "nombre": "WHOOP Bandas SuperKnit Luxe",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-09T11:30:00"
+    },
+    "9146860555789": {
+      "id": "9146860555789",
+      "nombre": "WHOOP Bandas LeatherLuxe",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-09T11:30:00"
+    },
+    "9146860666890": {
+      "id": "9146860666890",
+      "nombre": "WHOOP Cargador Básico",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-09T11:30:00"
+    },
+    "9146860777901": {
+      "id": "9146860777901",
+      "nombre": "WHOOP HydroSleeve",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-09T11:30:00"
+    },
+    "9146860888012": {
+      "id": "9146860888012",
+      "nombre": "WHOOP Arm Sleeve",
+      "stock": 0,
+      "disponible": false,
+      "timestamp": "2026-04-09T11:30:00"
+    }
+  }
+}

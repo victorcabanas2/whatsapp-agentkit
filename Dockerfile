@@ -1,18 +1,23 @@
-FROM node:20-alpine
-RUN apk add --no-cache openssl
+# Dockerfile — Imagen Docker para AgentKit
+# Generado por AgentKit
 
-EXPOSE 3000
+FROM python:3.12-slim
 
 WORKDIR /app
 
-ENV NODE_ENV=production
+# Copiar requirements e instalar dependencias
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY package.json package-lock.json* ./
-
-RUN npm ci --omit=dev && npm cache clean --force
-
+# Copiar el código
 COPY . .
 
-RUN npm run build
+# Exponer puerto
+EXPOSE 8000
 
-CMD ["npm", "run", "docker-start"]
+# Variables por defecto
+ENV PYTHONUNBUFFERED=1
+ENV ENVIRONMENT=production
+
+# Comando de inicio
+CMD ["uvicorn", "agent.main:app", "--host", "0.0.0.0", "--port", "8000"]

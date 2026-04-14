@@ -1,0 +1,290 @@
+{
+  "categorías": {
+    "Wearables": [
+      {
+        "nombre": "WHOOP LIFE MG",
+        "precio": "4.215.000 Gs",
+        "tipo": "Band - Premium",
+        "para_quién": "Atletas serios y profesionales"
+      },
+      {
+        "nombre": "WHOOP PEAK 5.0",
+        "precio": "3.150.000 Gs",
+        "tipo": "Band - Intermedia",
+        "para_quién": "Uso regular y deportivo"
+      },
+      {
+        "nombre": "WHOOP ONE 5.0",
+        "precio": "2.350.000 Gs",
+        "tipo": "Band - Essential",
+        "para_quién": "Quienes recién empiezan"
+      },
+      {
+        "nombre": "SmartGoggles 2.0",
+        "precio": "2.259.000 Gs",
+        "tipo": "Gafas inteligentes",
+        "para_quién": "Trabajadores de oficina, personas con fatiga ocular"
+      }
+    ],
+    "Masajeadores": [
+      {
+        "nombre": "Theragun PRO PLUS",
+        "precio": "5.799.000 Gs",
+        "tipo": "Masajeador profesional",
+        "para_quién": "Atletas profesionales y recuperación seria"
+      },
+      {
+        "nombre": "Theragun Sense",
+        "precio": "2.990.000 Gs",
+        "tipo": "Masajeador inteligente",
+        "para_quién": "Quienes quieren rutinas guiadas"
+      },
+      {
+        "nombre": "Theragun Mini 3.0",
+        "precio": "2.349.000 Gs",
+        "tipo": "Masajeador compacto",
+        "para_quién": "Viajeros, uso portátil"
+      },
+      {
+        "nombre": "WaveSolo",
+        "precio": "1.299.000 Gs",
+        "tipo": "Bola vibratoria",
+        "para_quién": "Principiantes, masaje localizado"
+      }
+    ],
+    "Botas de Compresión": [
+      {
+        "nombre": "Jetboots Pro Plus",
+        "precio": "9.900.000 Gs",
+        "tipo": "Botas profesionales",
+        "para_quién": "Atletas de élite, recuperación avanzada"
+      },
+      {
+        "nombre": "RecoveryAir JetBoots Prime",
+        "precio": "5.990.000 Gs",
+        "tipo": "Botas estándar",
+        "para_quién": "Atletas intensos, entrenamiento serio"
+      },
+      {
+        "nombre": "Therabody RecoveryPulse Calf Sleeve",
+        "precio": "3.999.000 Gs",
+        "tipo": "Manga pantorrilla",
+        "para_quién": "Corredores, atletas de pierna"
+      }
+    ],
+    "Skincare": [
+      {
+        "nombre": "TheraFace Mask",
+        "precio": "5.899.000 Gs",
+        "tipo": "Máscara LED grado médico",
+        "para_quién": "Rejuvenecimiento facial profesional"
+      },
+      {
+        "nombre": "TheraFace PRO",
+        "precio": "3.849.000 Gs",
+        "tipo": "Dispositivo multifunción",
+        "para_quién": "Skincare serio, múltiples beneficios"
+      },
+      {
+        "nombre": "FOREO FAQ 211",
+        "precio": "3.900.000 Gs",
+        "tipo": "Máscara LED cuello",
+        "zona": "Cuello y escote",
+        "para_quién": "Cuidado específico cuello/escote"
+      },
+      {
+        "nombre": "FOREO FAQ 221",
+        "precio": "3.139.000 Gs",
+        "tipo": "Máscara LED manos",
+        "zona": "Manos",
+        "para_quién": "Rejuvenecimiento de manos"
+      },
+      {
+        "nombre": "TheraFace Depuffing Wand",
+        "precio": "1.699.000 Gs",
+        "tipo": "Varita térmica",
+        "para_quién": "Reducción de ojeras, accesible"
+      }
+    ],
+    "Accesorios WHOOP": [
+      {
+        "nombre": "WHOOP SuperKnit Luxe Band",
+        "precio": "899.000 Gs",
+        "tipo": "Banda premium"
+      },
+      {
+        "nombre": "WHOOP LeatherLuxe Tapered Band",
+        "precio": "1.289.000 Gs",
+        "tipo": "Banda cuero tapered"
+      },
+      {
+        "nombre": "WHOOP LeatherLuxe Straight Band",
+        "precio": "1.289.000 Gs",
+        "tipo": "Banda cuero straight"
+      },
+      {
+        "nombre": "WHOOP Bicep Band",
+        "precio": "540.000 Gs",
+        "tipo": "Banda para bíceps"
+      },
+      {
+        "nombre": "WHOOP SuperKnit Band",
+        "precio": "540.000 Gs",
+        "tipo": "Banda tela premium"
+      },
+      {
+        "nombre": "WHOOP SportFlex Band",
+        "precio": "615.000 Gs",
+        "tipo": "Banda deportiva"
+      },
+      {
+        "nombre": "WHOOP Arm Sleeve",
+        "precio": "570.000 Gs",
+        "tipo": "Manga con sensor"
+      },
+      {
+        "nombre": "WHOOP HydroSleeve",
+        "precio": "250.000 Gs",
+        "tipo": "Funda impermeable"
+      },
+      {
+        "nombre": "WHOOP CoreKnit Band",
+        "precio": "429.000 Gs",
+        "tipo": "Banda tela básica"
+      },
+      {
+        "nombre": "WHOOP Cargador Inalámbrico",
+        "precio": "0 Gs",
+        "tipo": "Cargador inalámbrico"
+      },
+      {
+        "nombre": "WHOOP Cargador Básico",
+        "precio": "315.000 Gs",
+        "tipo": "Cargador estándar"
+      }
+    ]
+  },
+  "búsqueda_por_zona_corporal": {
+    "Muñeca": [
+      "WHOOP LIFE MG",
+      "WHOOP PEAK 5.0",
+      "WHOOP ONE 5.0",
+      "WHOOP SuperKnit Luxe Band",
+      "WHOOP SuperKnit Band",
+      "WHOOP SportFlex Band",
+      "WHOOP CoreKnit Band",
+      "WHOOP LeatherLuxe Tapered Band",
+      "WHOOP LeatherLuxe Straight Band"
+    ],
+    "Rostro": [
+      "TheraFace Mask",
+      "TheraFace PRO"
+    ],
+    "Contorno de ojos": [
+      "TheraFace Depuffing Wand",
+      "SmartGoggles 2.0"
+    ],
+    "Cuello y Escote": [
+      "FOREO FAQ 211"
+    ],
+    "Manos": [
+      "FOREO FAQ 221"
+    ],
+    "Piernas y Muslos": [
+      "RecoveryAir JetBoots Prime",
+      "Jetboots Pro Plus"
+    ],
+    "Pantorrilla": [
+      "Therabody RecoveryPulse Calf Sleeve"
+    ],
+    "Espalda, cuello, brazos, piernas (múltiple)": [
+      "Theragun PRO PLUS",
+      "Theragun Sense",
+      "Theragun Mini 3.0",
+      "WaveSolo"
+    ],
+    "Bíceps": [
+      "WHOOP Bicep Band"
+    ],
+    "Brazo": [
+      "WHOOP Arm Sleeve"
+    ]
+  },
+  "búsqueda_por_rango_precio": {
+    "Menos de 1.500.000 Gs": [
+      "TheraFace Depuffing Wand (1.699.000 Gs)",
+      "WHOOP Cargador Básico (749.000 Gs)",
+      "WHOOP HydroSleeve (999.000 Gs)",
+      "WHOOP Arm Sleeve (899.000 Gs)",
+      "WHOOP CoreKnit Band (1.299.000 Gs)",
+      "WaveSolo (1.299.000 Gs)"
+    ],
+    "1.500.000 - 3.000.000 Gs": [
+      "WHOOP SportFlex Band (1.599.000 Gs)",
+      "WHOOP SuperKnit Band (1.599.000 Gs)",
+      "WHOOP LeatherLuxe Tapered Band (1.999.000 Gs)",
+      "WHOOP LeatherLuxe Straight Band (1.999.000 Gs)",
+      "WHOOP Bicep Band (1.999.000 Gs)",
+      "WHOOP SuperKnit Luxe Band (1.899.000 Gs)",
+      "WHOOP Cargador Inalámbrico (1.099.000 Gs)",
+      "FOREO FAQ 211 (2.199.000 Gs)",
+      "FOREO FAQ 221 (2.199.000 Gs)",
+      "Theragun Mini 3.0 (2.349.000 Gs)",
+      "WHOOP ONE 5.0 (2.350.000 Gs)",
+      "SmartGoggles 2.0 (2.259.000 Gs)",
+      "Theragun Sense (2.990.000 Gs)"
+    ],
+    "3.000.000 - 5.000.000 Gs": [
+      "WHOOP PEAK 5.0 (3.150.000 Gs)",
+      "Therabody RecoveryPulse Calf Sleeve (3.999.000 Gs)",
+      "TheraFace PRO (3.849.000 Gs)"
+    ],
+    "5.000.000 - 7.000.000 Gs": [
+      "RecoveryAir JetBoots Prime (5.990.000 Gs)",
+      "Theragun PRO PLUS (5.799.000 Gs)",
+      "TheraFace Mask (5.899.000 Gs)",
+      "WHOOP LIFE MG (4.215.000 Gs)"
+    ],
+    "Más de 7.000.000 Gs": [
+      "Jetboots Pro Plus (9.900.000 Gs)"
+    ]
+  },
+  "filtros_especiales": {
+    "Para principiantes": [
+      "WaveSolo (1.299.000 Gs) - Lo más barato para empezar",
+      "WHOOP ONE 5.0 (2.350.000 Gs) - Essential band",
+      "Theragun Mini 3.0 (2.349.000 Gs) - Compacto y fácil",
+      "TheraFace Depuffing Wand (1.699.000 Gs) - Accesible y rápido"
+    ],
+    "Para atletas intensos": [
+      "Theragun PRO PLUS (5.799.000 Gs)",
+      "RecoveryAir JetBoots Prime (5.990.000 Gs)",
+      "WHOOP PEAK 5.0 (3.150.000 Gs)",
+      "WHOOP LIFE MG (4.215.000 Gs)"
+    ],
+    "Para profesionales/élite": [
+      "Jetboots Pro Plus (9.900.000 Gs)",
+      "WHOOP LIFE MG (4.215.000 Gs)",
+      "Theragun PRO PLUS (5.799.000 Gs)",
+      "TheraFace Mask (5.899.000 Gs)"
+    ],
+    "Portátil/Viaje": [
+      "Theragun Mini 3.0 (2.349.000 Gs)",
+      "WaveSolo (1.299.000 Gs)",
+      "TheraFace Depuffing Wand (1.699.000 Gs)",
+      "WHOOP ONE 5.0 (2.350.000 Gs)"
+    ],
+    "Para escritorio/homeoffice": [
+      "SmartGoggles 2.0 (2.259.000 Gs)",
+      "TheraFace PRO (3.849.000 Gs)",
+      "TheraFace Mask (5.899.000 Gs)"
+    ]
+  },
+  "notas_importantes": {
+    "FOREO_diferencias": "FAQ 211 es ÚNICAMENTE para cuello/escote. FAQ 221 es ÚNICAMENTE para manos. NO son intercambiables.",
+    "WHOOP_diferencias": "ONE = básico, PEAK = intermedio con bandas premium, LIFE = premium con coaching",
+    "bandas_whoop_compatibles": "Todas las bandas (excepto Bicep y Arm Sleeve) son intercambiables entre WHOOP 5.0 y WHOOP Life MG",
+    "precios_vigentes": "Precios verificados al 2026-04-07. Confirmar con el equipo antes de enviar presupuesto"
+  },
+  "total_productos": 27
+}

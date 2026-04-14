@@ -1,0 +1,256 @@
+{
+  "búsqueda_por_palabra_clave": {
+    "whoop": [
+      "WHOOP_LIFE_MG",
+      "WHOOP_PEAK_5_0",
+      "WHOOP_ONE_5_0",
+      "COREKNIT_BAND_5_0",
+      "SUPERKNIT_BAND_5_0_MG",
+      "BICEP_BAND_5_0_MG",
+      "SPORTFLEX_BAND_5_0_MG",
+      "SUPERKNIT_LUXE_BAND_5_0_MG",
+      "LEATHERLUXE_TAPERED_BAND_5_0_MG",
+      "LEATHERLUXE_STRAIGHT_BAND_5_0_MG",
+      "CARGADOR_BASICO_5_0",
+      "CARGADOR_INALAMBRICO_5_0",
+      "HYDROSLEEVE",
+      "ARM_SLEEVE_WHOOP"
+    ],
+    "theragun": [
+      "THERAGUN_PRO_PLUS",
+      "THERAGUN_MINI_3_0",
+      "THERAGUN_SENSE"
+    ],
+    "jetboots": [
+      "JETBOOTS_PRIME",
+      "JETBOOTS_PRO_PLUS"
+    ],
+    "recovery": [
+      "RECOVERY_PULSE_CALF_SLEEVE",
+      "JETBOOTS_PRIME",
+      "JETBOOTS_PRO_PLUS"
+    ],
+    "theraface": [
+      "THERAFACE_PRO",
+      "THERAFACE_MASK",
+      "THERAFACE_DEPUFFING_WAND"
+    ],
+    "foreo": [
+      "FOREO_FAQ_211",
+      "FOREO_FAQ_221"
+    ],
+    "faq": [
+      "FOREO_FAQ_211",
+      "FOREO_FAQ_221"
+    ],
+    "smartgoggles": [
+      "SMARTGOGGLES_2_0"
+    ],
+    "gafas": [
+      "SMARTGOGGLES_2_0"
+    ],
+    "wavesolo": [
+      "WAVESOLO"
+    ],
+    "masajeador": [
+      "THERAGUN_PRO_PLUS",
+      "THERAGUN_MINI_3_0",
+      "THERAGUN_SENSE",
+      "WAVESOLO"
+    ],
+    "band": [
+      "COREKNIT_BAND_5_0",
+      "SUPERKNIT_BAND_5_0_MG",
+      "BICEP_BAND_5_0_MG",
+      "SPORTFLEX_BAND_5_0_MG",
+      "SUPERKNIT_LUXE_BAND_5_0_MG",
+      "LEATHERLUXE_TAPERED_BAND_5_0_MG",
+      "LEATHERLUXE_STRAIGHT_BAND_5_0_MG"
+    ],
+    "banda": [
+      "COREKNIT_BAND_5_0",
+      "SUPERKNIT_BAND_5_0_MG",
+      "BICEP_BAND_5_0_MG",
+      "SPORTFLEX_BAND_5_0_MG",
+      "SUPERKNIT_LUXE_BAND_5_0_MG",
+      "LEATHERLUXE_TAPERED_BAND_5_0_MG",
+      "LEATHERLUXE_STRAIGHT_BAND_5_0_MG"
+    ],
+    "cuello": [
+      "FOREO_FAQ_211"
+    ],
+    "escote": [
+      "FOREO_FAQ_211"
+    ],
+    "manos": [
+      "FOREO_FAQ_221"
+    ],
+    "rostro": [
+      "THERAFACE_MASK",
+      "THERAFACE_PRO"
+    ],
+    "cara": [
+      "THERAFACE_MASK",
+      "THERAFACE_PRO"
+    ],
+    "ojeras": [
+      "THERAFACE_DEPUFFING_WAND"
+    ],
+    "botas": [
+      "JETBOOTS_PRIME",
+      "JETBOOTS_PRO_PLUS",
+      "RECOVERY_PULSE_CALF_SLEEVE"
+    ],
+    "compresión": [
+      "JETBOOTS_PRIME",
+      "JETBOOTS_PRO_PLUS",
+      "RECOVERY_PULSE_CALF_SLEEVE",
+      "ARM_SLEEVE_WHOOP"
+    ],
+    "cargador": [
+      "CARGADOR_BASICO_5_0",
+      "CARGADOR_INALAMBRICO_5_0"
+    ],
+    "accesorio": [
+      "COREKNIT_BAND_5_0",
+      "SUPERKNIT_BAND_5_0_MG",
+      "BICEP_BAND_5_0_MG",
+      "SPORTFLEX_BAND_5_0_MG",
+      "SUPERKNIT_LUXE_BAND_5_0_MG",
+      "LEATHERLUXE_TAPERED_BAND_5_0_MG",
+      "LEATHERLUXE_STRAIGHT_BAND_5_0_MG",
+      "CARGADOR_BASICO_5_0",
+      "CARGADOR_INALAMBRICO_5_0",
+      "HYDROSLEEVE",
+      "ARM_SLEEVE_WHOOP"
+    ]
+  },
+  "búsqueda_por_marca": {
+    "Therabody": [
+      "THERAGUN_PRO_PLUS",
+      "THERAGUN_MINI_3_0",
+      "THERAGUN_SENSE",
+      "JETBOOTS_PRIME",
+      "JETBOOTS_PRO_PLUS",
+      "THERAFACE_PRO",
+      "THERAFACE_MASK",
+      "THERAFACE_DEPUFFING_WAND",
+      "SMARTGOGGLES_2_0",
+      "WAVESOLO",
+      "RECOVERY_PULSE_CALF_SLEEVE"
+    ],
+    "WHOOP": [
+      "WHOOP_LIFE_MG",
+      "WHOOP_PEAK_5_0",
+      "WHOOP_ONE_5_0",
+      "COREKNIT_BAND_5_0",
+      "SUPERKNIT_BAND_5_0_MG",
+      "BICEP_BAND_5_0_MG",
+      "SPORTFLEX_BAND_5_0_MG",
+      "SUPERKNIT_LUXE_BAND_5_0_MG",
+      "LEATHERLUXE_TAPERED_BAND_5_0_MG",
+      "LEATHERLUXE_STRAIGHT_BAND_5_0_MG",
+      "CARGADOR_BASICO_5_0",
+      "CARGADOR_INALAMBRICO_5_0",
+      "HYDROSLEEVE",
+      "ARM_SLEEVE_WHOOP"
+    ],
+    "FOREO": [
+      "FOREO_FAQ_211",
+      "FOREO_FAQ_221"
+    ]
+  },
+  "búsqueda_por_precio_aprox": {
+    "hasta_1m": [
+      "WHOOP_Cargador_Basico",
+      "WHOOP_Arm_Sleeve",
+      "WHOOP_HydroSleeve"
+    ],
+    "1m_a_2m": [
+      "WHOOP_CoreKnit_Band",
+      "WaveSolo",
+      "TheraFace_Depuffing_Wand",
+      "WHOOP_SportFlex_Band",
+      "WHOOP_SuperKnit_Band",
+      "WHOOP_Cargador_Inalambrico"
+    ],
+    "2m_a_3m": [
+      "FOREO_FAQ_211",
+      "FOREO_FAQ_221",
+      "Theragun_Mini",
+      "WHOOP_One",
+      "SmartGoggles",
+      "WHOOP_LeatherLuxe_Tapered",
+      "WHOOP_LeatherLuxe_Straight",
+      "WHOOP_Bicep_Band",
+      "WHOOP_SuperKnit_Luxe_Band",
+      "Theragun_Sense"
+    ],
+    "3m_a_5m": [
+      "WHOOP_Peak",
+      "TheraFace_Pro",
+      "Recovery_Pulse_Calf"
+    ],
+    "5m_a_7m": [
+      "Theragun_Pro_Plus",
+      "JetBoots_Prime",
+      "TheraFace_Mask"
+    ],
+    "7m_a_10m": [
+      "WHOOP_Life_MG",
+      "JetBoots_Pro_Plus"
+    ]
+  },
+  "respuestas_rápidas": {
+    "¿cuál es el whoop más barato?": {
+      "producto": "WHOOP_ONE_5_0",
+      "precio": "2.350.000 Gs",
+      "respuesta": "El WHOOP One 5.0 es el más accesible. Es la versión Essential con monitoreo completo."
+    },
+    "¿cuál es el whoop más caro?": {
+      "producto": "WHOOP_LIFE_MG",
+      "precio": "4.215.000 Gs",
+      "respuesta": "El WHOOP Life MG es la versión Premium con análisis profesional y coaching."
+    },
+    "¿cuál es la diferencia entre whoop?": {
+      "respuesta": "ONE: monitoreo básico (2.350.000). PEAK: intermedia con bandas premium (3.150.000). LIFE: premium con coaching (4.215.000)"
+    },
+    "¿cuál es el masajeador más potente?": {
+      "producto": "THERAGUN_PRO_PLUS",
+      "precio": "5.799.000 Gs",
+      "respuesta": "El Theragun PRO PLUS es el más potente con 27 kg de fuerza, 5 terapias y sensor biométrico."
+    },
+    "¿cuál es el más barato?": {
+      "producto": "CARGADOR_BASICO_5_0",
+      "precio": "315.000 Gs",
+      "respuesta": "El cargador básico WHOOP es el más accesible (315.000 Gs)."
+    },
+    "¿para la cara o rostro?": {
+      "productos": ["THERAFACE_MASK", "THERAFACE_PRO"],
+      "respuesta": "TheraFace PRO (3.849.000) para multifunción, o TheraFace Mask (5.899.000) para rejuvenecimiento grado médico."
+    },
+    "¿para el cuello?": {
+      "producto": "FOREO_FAQ_211",
+      "precio": "3.900.000 Gs",
+      "respuesta": "FOREO FAQ 211 — máscara LED específica para cuello y escote."
+    },
+    "¿para las manos?": {
+      "producto": "FOREO_FAQ_221",
+      "precio": "3.139.000 Gs",
+      "respuesta": "FOREO FAQ 221 — máscara LED para rejuvenecimiento de manos."
+    },
+    "¿para ojeras?": {
+      "producto": "THERAFACE_DEPUFFING_WAND",
+      "precio": "1.699.000 Gs",
+      "respuesta": "TheraFace Depuffing Wand — varita térmica que reduce ojeras en 6 minutos."
+    },
+    "¿para piernas?": {
+      "productos": ["JETBOOTS_PRIME", "JETBOOTS_PRO_PLUS", "RECOVERY_PULSE_CALF_SLEEVE"],
+      "respuesta": "JetBoots Prime (5.990.000) para compresión estándar, Pro Plus (9.900.000) para élite, o Calf Sleeve (3.999.000) para pantorrilla."
+    }
+  },
+  "total_productos": 27,
+  "total_categorías": 5,
+  "último_actualizado": "2026-04-07",
+  "notas": "Este archivo está optimizado para búsquedas rápidas del bot Belén. Los IDs de producto corresponden a shopify.yaml"
+}
