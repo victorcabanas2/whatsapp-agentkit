@@ -192,6 +192,7 @@ async def detectar_y_programar_seguimiento(
     try:
         # Palabras clave para detectar solicitud de seguimiento
         palabras_clave = [
+            # Escribir/Contactar
             "escríbeme",
             "escribeme",
             "escribí",
@@ -199,13 +200,32 @@ async def detectar_y_programar_seguimiento(
             "me escribís",
             "me escribes",
             "me escriba",
+
+            # Recordar/Avisar
+            "recordás",
+            "recordas",
+            "recordá",
+            "recuerda",
+            "recordame",
+            "me recordas",
+            "me recordás",
+            "me recuerda",
+            "acuerda",
+
+            # Avisar/Contactar
             "me avisa",
             "avisame",
             "avísame",
             "contáctate",
             "contactate",
+            "contáctame",
+            "contactame",
+
+            # Otros
             "vuelve a escribir",
             "vuelvo",
+            "llámame",
+            "llamame",
         ]
 
         # Patrones para detectar tiempo (minutos, horas, etc)
