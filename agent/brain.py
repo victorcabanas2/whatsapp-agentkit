@@ -283,12 +283,15 @@ async def detectar_y_programar_seguimiento(
             )
 
             if exito:
-                logger.info(f"✅ Seguimiento programado exitosamente para {telefono}")
-                # Modificar la respuesta para confirmar
-                respuesta_modificada = respuesta_belén + f"\n\n✅ Dale, anota que te escribo en {minutos} minuto(s)!"
+                logger.info(f"✅ Seguimiento programado exitosamente para {telefono} en {minutos} minutos")
+                # Modificar la respuesta para confirmar explícitamente
+                # El cliente NECESITA saber que se guardó
+                palabra_tiempo = "minuto" if minutos == 1 else "minutos"
+                respuesta_modificada = respuesta_belén + f"\n\n✅ Dale, te escribo en {minutos} {palabra_tiempo}. Ya queda anotado 💙"
                 return respuesta_modificada
             else:
-                logger.warning(f"⚠️ No se pudo programar seguimiento para {telefono}")
+                logger.error(f"❌ FALLO AL PROGRAMAR SEGUIMIENTO para {telefono}")
+                logger.warning(f"⚠️ No se pudo programar seguimiento. Retornando respuesta original.")
                 return respuesta_belén
 
         except (ValueError, AttributeError) as e:

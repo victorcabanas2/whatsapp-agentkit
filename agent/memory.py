@@ -1591,17 +1591,35 @@ async def programar_seguimiento_dinamico(
                 nombre=nombre or lead.nombre,
                 momento_programado=momento_programado,
                 mensaje_personalizado=mensaje_personalizado,
-                contexto_original=json.dumps(contexto or {})
+                contexto_original=json.dumps(contexto or {}),
+                fue_enviado=False  # Explícitamente pendiente
             )
 
             session.add(seguimiento)
             await session.commit()
 
-            logger.info(f"✓ Seguimiento programado para {telefono} en {momento_programado}")
+            # AUDITORÍA: Verificar que se guardó correctamente
+            seg_id = seguimiento.id
+
+            # Validar que se guardó en BD
+            query_check = select(SeguimientoProgramado).where(SeguimientoProgramado.id == seg_id)
+            result_check = await session.execute(query_check)
+            guardado = result_check.scalar_one_or_none()
+
+            if not guardado:
+                logger.error(f"❌ CRÍTICO: Seguimiento #{seg_id} no se guardó en BD después de commit!")
+                return False
+
+            logger.info(f"✅ Seguimiento #{seg_id} programado para {telefono} en {momento_programado} (VERIFICADO)")
+            logger.debug(f"   Nombre: {nombre or lead.nombre}")
+            logger.debug(f"   Mensaje: {mensaje_personalizado or '[genérico]'}")
             return True
 
+    except IntegrityError as e:
+        logger.error(f"❌ Error de integridad al programar seguimiento para {telefono}: {e}")
+        return False
     except Exception as e:
-        logger.error(f"Error programando seguimiento: {e}")
+        logger.error(f"❌ Error programando seguimiento para {telefono}: {type(e).__name__}: {e}", exc_info=True)
         return False
 
 
