@@ -1591,7 +1591,7 @@ async def programar_seguimiento_dinamico(
                 nombre=nombre or lead.nombre,
                 momento_programado=momento_programado,
                 mensaje_personalizado=mensaje_personalizado,
-                contexto=json.dumps(contexto or {})
+                contexto_original=json.dumps(contexto or {})
             )
 
             session.add(seguimiento)
