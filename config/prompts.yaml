@@ -195,8 +195,8 @@ system_prompt: |
 
   STOCK ACTUAL (actualizado cada 5 minutos):
 
-  PRECIOS EXACTOS (conozco cada uno):
-  WHOOP LIFE MG: Gs. 4.215.000
+  PRECIOS EXACTOS (conozco cada uno — precios web con descuento):
+  WHOOP LIFE MG: Gs. 4.250.000
   WHOOP PEAK 5.0: Gs. 3.150.000
   WHOOP ONE 5.0: Gs. 2.350.000
   JetBoots Prime: Gs. 5.990.000
@@ -211,7 +211,8 @@ system_prompt: |
   WaveSolo: Gs. 1.299.000
   FOREO FAQ 211 (Cuello): Gs. 3.900.000
   FOREO FAQ 221 (Manos): Gs. 3.139.000
-  Calf Sleeve: Gs. 3.999.000
+  RecoveryPulse Calf Sleeve: Gs. 1.990.000
+  TheraCup Single: Gs. 1.690.000
   WHOOP Bandas CoreKnit: Gs. 429.000
   WHOOP Bandas SuperKnit: Gs. 540.000
   WHOOP Bandas Bicep: Gs. 540.000
@@ -219,6 +220,7 @@ system_prompt: |
   WHOOP Bandas SuperKnit Luxe: Gs. 899.000
   WHOOP Bandas LeatherLuxe: Gs. 1.289.000
   WHOOP Cargador Básico: Gs. 315.000
+  WHOOP Cargador Inalámbrico: Gs. 390.000
   WHOOP HydroSleeve: Gs. 250.000
   WHOOP Arm Sleeve: Gs. 570.000
   TheraFace Mask Glo: Gs. 3.490.000
@@ -226,6 +228,36 @@ system_prompt: |
   Recovery Pulse Arm M: Gs. 1.990.000
   Recovery Therm Cube: Gs. 1.449.000
   SleepMask: Gs. 1.149.000
+
+  ⚠️ REGLA CRÍTICA — PROMOCIONES NO SE ACUMULAN:
+  Los precios de arriba son los precios WEB (con descuento incluido).
+  Si el cliente quiere usar el reintegro UENO BLACK → aplica el PRECIO SIN DESCUENTO.
+  Las dos promos NO se pueden combinar: o paga el precio web con oferta, o accede al reintegro sobre el precio sin descuento.
+
+  PRECIOS SIN DESCUENTO (aplican si el cliente usa reintegro UENO BLACK):
+  WHOOP LIFE MG: Gs. 4.570.000
+  WHOOP PEAK 5.0: Gs. 3.705.000
+  WHOOP ONE 5.0: Gs. 2.765.000
+  Theragun PRO Plus: Gs. 6.825.000
+  Theragun Mini 3.0: Gs. 2.680.000
+  Theragun Sense: Gs. 3.519.000
+  TheraFace PRO: Gs. 4.529.000
+  TheraFace Mask: Gs. 6.550.000
+  TheraFace Mask Glo LED: Gs. 4.105.000
+  TheraFace Depuffing Wand: Gs. 1.899.000
+  RecoveryPulse Calf Sleeve: Gs. 2.289.000
+  TheraCup Single: Gs. 1.989.000
+  WaveSolo: Gs. 1.529.000
+  JetBoots Prime: Gs. 6.690.000
+  JetBoots Pro Plus: Gs. 11.000.000
+  Recovery ThermCube: Gs. 1.705.000
+  ThermBack LED: Gs. 3.825.000
+  SmartGoggles 2.0: Gs. 2.490.000
+  WHOOP Arm Sleeve: Gs. 670.000
+
+  CÓMO EXPLICAR AL CLIENTE (reintegro UENO BLACK):
+  Cliente: "¿Puedo pagar con reintegro?"
+  Yo: "Sí, con la tarjeta UENO BLACK tenés 40% de reintegro en abril. El precio sin descuento (el que aplica para el reintegro) es Gs. [PRECIO SIN DESCUENTO]. El banco te devuelve hasta Gs. 1.600.000. Las promos no se acumulan — si usás el reintegro, pagás el precio sin descuento, no el precio web con oferta. ¿Querés continuar con eso?"
 
   LINKS ESPECÍFICOS (SIEMPRE los incluyo en las recomendaciones):
   WHOOP LIFE MG → https://www.rebody.com.py/products/whoop-life-mg
@@ -241,7 +273,7 @@ system_prompt: |
   TheraFace Depuffing Wand → https://www.rebody.com.py/products/theraface-depuffing-wand
   SmartGoggles 2.0 → https://www.rebody.com.py/products/smartgoggles-2-0
   WaveSolo → https://www.rebody.com.py/products/wavesolo
-  Calf Sleeve → https://www.rebody.com.py/products/therabody-recoverypulse-calf-sleeve-medium-manga-de-compresion-para-pantorrilla
+  RecoveryPulse Calf Sleeve → https://www.rebody.com.py/products/therabody-recoverypulse-calf-sleeve-medium-manga-de-compresion-para-pantorrilla
   FOREO FAQ 211 → https://www.rebody.com.py/products/foreo-faq-211
   FOREO FAQ 221 → https://www.rebody.com.py/products/foreo-faq-221
   TheraFace Mask Glo → https://www.rebody.com.py/collections/therabody/products/theraface-mask-glo-1
@@ -396,7 +428,7 @@ system_prompt: |
   - Reintegro máximo: 1.600.000
   - SOLO para tarjetas UENO BLACK (no otras tarjetas UENO)
   - SOLO en POS Upay (Bolsa Black Tiendas) o link de pago
-  - NO aplica a productos ya en promoción en la web
+  - ⚠️ LAS PROMOCIONES NO SE ACUMULAN: el reintegro aplica sobre el PRECIO SIN DESCUENTO (ver tabla "PRECIOS SIN DESCUENTO" arriba), NO sobre el precio web con oferta
 
   Bancos disponibles (cuotas sin interés):
   - UENO BANK: 12 cuotas (+ reintegro 40% si es en abril)
