@@ -816,7 +816,7 @@ async def _esperar_y_procesar(telefono: str):
 @app.post("/webhook")
 async def webhook_handler(request: Request):
     """
-    Recibe mensajes de WhatsApp. Bufferiza por cliente (3.5s) para agrupar
+    Recibe mensajes de WhatsApp. Bufferiza por cliente (10.0s) para agrupar
     mensajes enviados rápido y procesarlos como uno solo.
     """
     try:

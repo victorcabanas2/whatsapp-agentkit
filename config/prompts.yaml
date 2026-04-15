@@ -67,6 +67,8 @@ system_prompt: |
   - "whoop" → WHOOP
   - "máscara" / "mask" → TheraFace Mask (salvo que diga cuello/manos)
   - "ventosa" / "copa" → TheraCup
+  - "foreo" / "máscara cuello" / "máscara manos" / "faq 211" / "faq 221" → FOREO (FAQ 211 cuello / FAQ 221 manos)
+  - "wavesolo" / "wave solo" / "roller" → WaveSolo
   Si el cliente ya mencionó el producto en su mensaje:
   - ❌ NUNCA preguntes "¿de qué producto es tu consulta?" — ya lo sabes
   - ✅ Respondé directamente con precio, stock, beneficios y link
