@@ -69,21 +69,47 @@ class ProveedorWhapi(ProveedorWhatsApp):
         for msg in body.get("messages", []):
             es_propio = msg.get("from_me", False)
 
-            # Para mensajes propios: extraer solo el texto y pasar para que main.py
-            # pueda guardar mensajes manuales de Victor como contexto histórico
+            # Para mensajes propios (from_me): extraer texto Y contexto de anuncio.
+            # Estos incluyen tanto mensajes manuales de Victor como saludos automáticos
+            # enviados por Meta cuando alguien hace click en un anuncio.
+            # El saludo automático ("¡Hola! ¿Cómo podemos ayudarte?") SÍ trae referral/ad context.
             if es_propio:
                 tipo = msg.get("type", "")
                 texto_propio = ""
+                referral_ad = None
+
                 if tipo == "text":
                     texto_propio = msg.get("text", {}).get("body", "").strip()
+
+                    # Extraer referral de anuncio si existe (saludo automático de Meta Ads)
+                    root_referral = msg.get("referral", {})
+                    if root_referral:
+                        source_type = root_referral.get("source_type", "")
+                        source_id = root_referral.get("source_id", "").strip()
+                        headline = root_referral.get("headline", "").strip()
+                        ad_body = root_referral.get("body", "").strip()
+                        ad_headline = headline or ad_body
+                        body_url = root_referral.get("body_url", "").strip()
+                        if source_type == "ad" or source_id:
+                            referral_ad = {
+                                "payload": source_id or None,
+                                "headline": ad_headline or None,
+                                "ad_url": body_url or None,
+                            }
+                            logger.info(f"📢 Referral en saludo automático: {referral_ad}")
+
                 elif tipo == "image":
                     texto_propio = msg.get("image", {}).get("caption", "").strip() or "[Imagen]"
-                if texto_propio:
+
+                telefono_propio = msg.get("chat_id", "").strip()
+                if texto_propio or referral_ad:
                     mensajes.append(MensajeEntrante(
-                        telefono=msg.get("chat_id", "").strip(),
-                        texto=texto_propio,
+                        telefono=telefono_propio,
+                        texto=texto_propio or "[Saludo automático]",
                         mensaje_id=msg.get("id", ""),
                         es_propio=True,
+                        anuncio_id=referral_ad.get("payload") if referral_ad else None,
+                        contexto_anuncio=referral_ad,
                     ))
                 continue
 

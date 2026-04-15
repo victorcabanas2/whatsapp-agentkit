@@ -104,6 +104,14 @@ BUFFER_DELAY = 10.0  # segundos de espera — permite acumular typos/correccione
 # ════════════════════════════════════════════════════════════
 RECENTLY_SENT_BOT: dict[str, float] = {}  # "{phone}:{text_prefix}" → timestamp enviado
 
+# ════════════════════════════════════════════════════════════
+# CONTEXTO DE ANUNCIO DESDE SALUDO AUTOMÁTICO
+# Cuando Meta envía el saludo automático (from_me) al hacer click en un anuncio,
+# ese webhook trae el referral/ad context. Lo guardamos aquí indexado por teléfono
+# para usarlo cuando el cliente responda a ese saludo.
+# ════════════════════════════════════════════════════════════
+AD_CONTEXT_BY_PHONE: dict[str, dict] = {}  # phone → {payload, headline, ad_url}
+
 
 # ════════════════════════════════════════════════════════════
 # LEAD SCORING — Detección de intención y urgencia
@@ -569,6 +577,24 @@ async def _procesar_mensaje_individual(msg):
         logger.info(f"🔍 contexto_anuncio: {msg.contexto_anuncio}")
         logger.info(f"🔍 imagen_url: {msg.imagen_url}")
 
+        # ── RECUPERAR CONTEXTO DE ANUNCIO DESDE SALUDO AUTOMÁTICO ──
+        # Si el cliente responde a un saludo automático de Meta Ads, el ad context
+        # llegó en ese saludo (from_me). Lo recuperamos y aplicamos aquí.
+        ad_ctx_almacenado = AD_CONTEXT_BY_PHONE.pop(telefono, None)
+        if ad_ctx_almacenado and not msg.contexto_anuncio:
+            msg.contexto_anuncio = ad_ctx_almacenado
+            msg.anuncio_id = ad_ctx_almacenado.get("payload")
+            logger.info(f"📢 Recuperado contexto de anuncio del saludo automático: {ad_ctx_almacenado}")
+
+        # ── INSTRUCCIÓN DE HISTORIAL (cuando hay conversación previa) ────
+        if historial:
+            contexto_sistema.append(
+                f"📋 CONVERSACIÓN EN CURSO: hay {len(historial)} mensajes previos con este cliente. "
+                f"LEÉ todo el historial ANTES de redactar tu respuesta. "
+                f"Entendé en qué punto está la venta, qué se dijo, qué quedó pendiente. "
+                f"NO saludés. NO trates al cliente como nuevo. Continuá exactamente desde donde quedó la conversación."
+            )
+
         es_cliente_nuevo = len(historial) == 0
         es_mensaje_corto = len(msg.texto) < 150
         tiene_palabras_clave = any(
@@ -809,6 +835,11 @@ async def webhook_handler(request: Request):
 
         for msg in mensajes:
             if msg.es_propio:
+                # Si el mensaje propio (saludo automático de Meta) trae contexto de anuncio, guardarlo
+                if msg.contexto_anuncio:
+                    AD_CONTEXT_BY_PHONE[msg.telefono] = msg.contexto_anuncio
+                    logger.info(f"📢 Contexto de anuncio guardado para {msg.telefono}: {msg.contexto_anuncio}")
+
                 # Distinguir ecos del bot vs mensajes manuales de Victor
                 _key = f"{msg.telefono}:{msg.texto[:80]}"
                 _now = datetime.utcnow().timestamp()
@@ -816,10 +847,10 @@ async def webhook_handler(request: Request):
                 if _is_bot_echo:
                     RECENTLY_SENT_BOT.pop(_key, None)
                     logger.debug(f"Eco del bot ignorado: {msg.telefono}")
-                elif msg.texto and msg.texto.strip():
+                elif msg.texto and msg.texto.strip() and msg.texto != "[Saludo automático]":
                     # Mensaje manual de Victor — guardar en historial para que Belén tenga contexto
                     await guardar_mensaje(msg.telefono, "assistant", msg.texto)
-                    logger.info(f"💾 Mensaje manual de Victor guardado para contexto: {msg.telefono} → {msg.texto[:50]}...")
+                    logger.info(f"💾 Mensaje manual de Victor guardado: {msg.telefono} → {msg.texto[:50]}...")
                 continue
 
             if not msg.texto or not msg.texto.strip():
