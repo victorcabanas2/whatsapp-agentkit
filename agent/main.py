@@ -94,7 +94,15 @@ MUTED_CHATS = set()  # {telefono1, telefono2, ...}
 # ════════════════════════════════════════════════════════════
 PENDING_MESSAGES: dict[str, list] = {}   # telefono → [MensajeEntrante, ...]
 PENDING_TASKS: dict[str, asyncio.Task] = {}  # telefono → asyncio.Task
-BUFFER_DELAY = 3.5  # segundos de espera para acumular mensajes
+BUFFER_DELAY = 10.0  # segundos de espera — permite acumular typos/correcciones antes de responder
+
+# ════════════════════════════════════════════════════════════
+# TRACKING MENSAJES PROPIOS — Evita doble-guardado de mensajes del bot
+# Cuando el bot envía un mensaje, Whapi devuelve un webhook "from_me: true".
+# Registramos los últimos textos enviados para ignorar esos ecos.
+# Los mensajes "from_me" que NO están aquí son respuestas manuales de Victor.
+# ════════════════════════════════════════════════════════════
+RECENTLY_SENT_BOT: dict[str, float] = {}  # "{phone}:{text_prefix}" → timestamp enviado
 
 
 # ════════════════════════════════════════════════════════════
@@ -106,6 +114,93 @@ KEYWORDS_HOT = [
     "dale", "cómo hago la transferencia", "cuándo llega", "listo",
     "ya me decide", "adelante con eso", "va", "que sea"
 ]
+
+# ════════════════════════════════════════════════════════════
+# DETECCIÓN DE PRODUCTO EN MENSAJE — Fallback cuando Meta no envía contexto
+# ════════════════════════════════════════════════════════════
+
+def detectar_producto_en_mensaje(texto: str) -> str | None:
+    """
+    Extrae el producto mencionado en el mensaje del cliente por palabras clave.
+    Usado como fallback cuando el referral de Meta no viene en el webhook.
+    """
+    t = texto.lower()
+
+    # JetBoots — "bota", "boot", "jetboots", "therabody boot"
+    if any(k in t for k in ["jetboots", "jet boots"]):
+        if any(k in t for k in ["pro plus", "proplus", "pro+"]):
+            return "JetBoots Pro Plus"
+        if "prime" in t:
+            return "JetBoots Prime"
+        return "JetBoots"
+    if any(k in t for k in ["bota", "botas"]):
+        if any(k in t for k in ["pro plus", "proplus"]):
+            return "JetBoots Pro Plus"
+        if "prime" in t:
+            return "JetBoots Prime"
+        return "JetBoots"  # ambas opciones, Claude decide
+
+    # RecoveryPulse Arm / Calf
+    if any(k in t for k in ["recoverypulse", "recovery pulse", "recovery arm", "brazo compresión", "manga compresion", "manga de compresión", "germánico"]):
+        return "RecoveryPulse Calf Sleeve"
+
+    # TheraCup
+    if any(k in t for k in ["theracup", "thera cup", "ventosa de masaje"]):
+        return "TheraCup"
+
+    # Theragun
+    if "theragun" in t:
+        if "mini" in t:
+            return "Theragun Mini 3.0"
+        if "sense" in t:
+            return "Theragun Sense"
+        if any(k in t for k in ["pro plus", "proplus", "pro +"]):
+            return "Theragun PRO Plus"
+        return "Theragun"
+
+    # WaveSolo
+    if any(k in t for k in ["wavesolo", "wave solo"]):
+        return "WaveSolo"
+
+    # TheraFace
+    if any(k in t for k in ["theraface", "thera face"]):
+        if any(k in t for k in ["mask", "máscara", "mascara"]):
+            return "TheraFace Mask"
+        if "depuff" in t or "ojera" in t:
+            return "TheraFace Depuffing Wand"
+        return "TheraFace PRO"
+
+    # SmartGoggles
+    if any(k in t for k in ["smartgoggles", "smart goggles", "goggle", "lentes de compresión"]):
+        return "SmartGoggles 2.0"
+
+    # WHOOP
+    if "whoop" in t:
+        if "life" in t or " mg" in t:
+            return "WHOOP LIFE MG"
+        if "peak" in t:
+            return "WHOOP PEAK 5.0"
+        if "one" in t:
+            return "WHOOP ONE 5.0"
+        return "WHOOP"
+
+    # FOREO
+    if "foreo" in t:
+        if "211" in t or "cuello" in t or "neck" in t:
+            return "FOREO FAQ 211"
+        if "221" in t or "mano" in t or "hand" in t:
+            return "FOREO FAQ 221"
+        return "FOREO"
+
+    # ThermBack
+    if any(k in t for k in ["thermback", "therm back", "manta led", "espalda led"]):
+        return "ThermBack LED"
+
+    # SleepMask
+    if any(k in t for k in ["sleepmask", "sleep mask", "antifaz"]):
+        return "SleepMask"
+
+    return None
 
 KEYWORDS_WARM = [
     "precio", "cuánto", "cuánto cuesta", "cuánto vale", "qué incluye",
@@ -475,21 +570,21 @@ async def _procesar_mensaje_individual(msg):
         logger.info(f"🔍 imagen_url: {msg.imagen_url}")
 
         es_cliente_nuevo = len(historial) == 0
-        es_mensaje_corto = len(msg.texto) < 100
+        es_mensaje_corto = len(msg.texto) < 150
         tiene_palabras_clave = any(
             palabra in msg.texto.lower()
-            for palabra in ["quiero", "información", "precio", "más info", "porfa", "me interesa"]
+            for palabra in ["quiero", "información", "precio", "más info", "porfa", "me interesa",
+                            "consulta", "info", "promo", "anuncio", "vi", "interesa"]
         )
         viene_de_anuncio_probablemente = es_cliente_nuevo and es_mensaje_corto and tiene_palabras_clave
 
         if viene_de_anuncio_probablemente:
             logger.info(f"🎯 CLIENTE NUEVO + MENSAJE GENÉRICO → Probablemente viene de anuncio")
 
-        # CASO 1: Anuncio Meta Ads
+        # CASO 1: Anuncio Meta Ads (referral viene en el webhook)
         if msg.anuncio_id or msg.payload or msg.contexto_anuncio or viene_de_anuncio_probablemente:
             anuncio_info = msg.anuncio_id or msg.payload or (msg.contexto_anuncio.get("payload") if msg.contexto_anuncio else None)
             ad_url = msg.contexto_anuncio.get("ad_url") if msg.contexto_anuncio else None
-            # El headline es el título del anuncio configurado por Victor — ej: "Theragun Mini 3.0 - Recuperación muscular"
             headline = msg.contexto_anuncio.get("headline") if msg.contexto_anuncio else None
 
             logger.info(f"📢 CLIENTE VIENE DE ANUNCIO: {anuncio_info} | headline: {headline}")
@@ -504,28 +599,44 @@ async def _procesar_mensaje_individual(msg):
             if not producto_identificado:
                 producto_identificado = mapear_anuncio_a_producto(anuncio_info) if anuncio_info else None
 
-            # Si tiene contexto de anuncio real (no solo heurística), siempre responder directamente
             tiene_contexto_real = bool(msg.anuncio_id or msg.payload or msg.contexto_anuncio)
 
+            # CAPA EXTRA: Si aún no identificamos el producto, buscarlo en el texto del mensaje
+            if not producto_identificado:
+                producto_en_texto = detectar_producto_en_mensaje(msg.texto)
+                if producto_en_texto:
+                    producto_identificado = producto_en_texto
+                    logger.info(f"🔍 Producto detectado en texto del mensaje: {producto_en_texto}")
+
             if not producto_identificado and viene_de_anuncio_probablemente and not tiene_contexto_real:
-                # Solo preguntar si no hay NINGÚN dato del anuncio
-                contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente probablemente viene de un ANUNCIO en Instagram/Facebook.")
+                # Último recurso: no hay datos del anuncio NI en el texto → preguntar brevemente
+                contexto_sistema.append(f"🎯 CONTEXTO: Este cliente probablemente viene de un anuncio de Instagram/Facebook.")
                 contexto_sistema.append(f"✅ El cliente escribió: \"{msg.texto}\"")
-                contexto_sistema.append(f"✅ ESTRATEGIA: Pregunta de forma natural cuál PRODUCTO vio en el anuncio.")
-                contexto_sistema.append(f"✅ Ejemplo: '¿Fue el TheraCup, FAO 211, WHOOP o Theragun que viste en el anuncio?'")
-                contexto_sistema.append(f"✅ Una vez que diga cuál, dale TODA la información sin preguntar más.")
-                mensaje_contextualizado = f"[CLIENTE DE ANUNCIO - IDENTIFICA QUÉ PRODUCTO] {msg.texto}"
+                contexto_sistema.append(f"✅ No podemos identificar el producto exacto desde el anuncio.")
+                contexto_sistema.append(f"✅ Pregunta de forma breve y cálida: '¿Sobre qué producto es tu consulta?' — UNA SOLA pregunta.")
+                contexto_sistema.append(f"✅ NO listes productos ni hagas preguntas largas. Solo esa pregunta corta.")
+                mensaje_contextualizado = f"[CLIENTE DE ANUNCIO - NO SE PUDO IDENTIFICAR PRODUCTO] {msg.texto}"
             else:
-                # Tenemos información del anuncio — responder directamente sin preguntar
                 nombre_producto = producto_identificado or headline or anuncio_info or "el producto del anuncio"
-                contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente hizo clic en un anuncio específico de Meta Ads.")
+                contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente hizo clic en un anuncio de Meta Ads.")
                 if headline:
                     contexto_sistema.append(f"Anuncio: \"{headline}\"")
                 contexto_sistema.append(f"Producto identificado: {nombre_producto}")
-                contexto_sistema.append(f"✅ TÚ YA SABES qué producto es. NO preguntes 'de qué producto es tu consulta'.")
-                contexto_sistema.append(f"✅ Responde DIRECTAMENTE con toda la información sobre: {nombre_producto}")
-                contexto_sistema.append(f"✅ Incluye: precio, stock actual, beneficios principales y link de compra.")
+                contexto_sistema.append(f"✅ YA SABÉS qué producto es. NO preguntes 'de qué producto es tu consulta'.")
+                contexto_sistema.append(f"✅ Respondé DIRECTAMENTE con info completa sobre: {nombre_producto}")
+                contexto_sistema.append(f"✅ Incluí: precio, stock actual, beneficios principales y link de compra.")
                 mensaje_contextualizado = f"[CLIENTE VIENE DE ANUNCIO DE: {nombre_producto}] {msg.texto}"
+
+        # CASO 1.5: Cliente nuevo menciona un producto en su mensaje (sin ser detectado como "anuncio")
+        # Esto cubre el caso: "Escribo por la promo de la bota therabody"
+        elif es_cliente_nuevo and not contexto_sistema:
+            producto_en_texto = detectar_producto_en_mensaje(msg.texto)
+            if producto_en_texto:
+                logger.info(f"🔍 Producto en mensaje de cliente nuevo: {producto_en_texto}")
+                contexto_sistema.append(f"🎯 CONTEXTO: El cliente nuevo menciona '{producto_en_texto}' en su mensaje.")
+                contexto_sistema.append(f"✅ Respondé DIRECTAMENTE sobre {producto_en_texto} — precio, stock, beneficios, link.")
+                contexto_sistema.append(f"✅ NO preguntes de qué producto es — ya lo mencionó.")
+                mensaje_contextualizado = f"[CLIENTE PREGUNTA POR: {producto_en_texto}] {msg.texto}"
 
         # CASO 2: Reply a mensaje anterior
         if msg.reply_a_texto:
@@ -601,6 +712,9 @@ async def _procesar_mensaje_individual(msg):
 
         # ── ENVIAR RESPUESTA ────────────────────────────────
         await guardar_mensaje(telefono, "assistant", respuesta_limpia)
+        # Registrar texto enviado para evitar doble-guardado cuando Whapi envía el eco "from_me"
+        _bot_key = f"{telefono}:{respuesta_limpia[:80]}"
+        RECENTLY_SENT_BOT[_bot_key] = datetime.utcnow().timestamp()
         exito = await proveedor.enviar_mensaje(telefono, respuesta_limpia)
 
         if exito:
@@ -695,7 +809,17 @@ async def webhook_handler(request: Request):
 
         for msg in mensajes:
             if msg.es_propio:
-                logger.debug(f"Ignorando mensaje propio de {msg.telefono}")
+                # Distinguir ecos del bot vs mensajes manuales de Victor
+                _key = f"{msg.telefono}:{msg.texto[:80]}"
+                _now = datetime.utcnow().timestamp()
+                _is_bot_echo = _key in RECENTLY_SENT_BOT and (_now - RECENTLY_SENT_BOT[_key]) < 90
+                if _is_bot_echo:
+                    RECENTLY_SENT_BOT.pop(_key, None)
+                    logger.debug(f"Eco del bot ignorado: {msg.telefono}")
+                elif msg.texto and msg.texto.strip():
+                    # Mensaje manual de Victor — guardar en historial para que Belén tenga contexto
+                    await guardar_mensaje(msg.telefono, "assistant", msg.texto)
+                    logger.info(f"💾 Mensaje manual de Victor guardado para contexto: {msg.telefono} → {msg.texto[:50]}...")
                 continue
 
             if not msg.texto or not msg.texto.strip():

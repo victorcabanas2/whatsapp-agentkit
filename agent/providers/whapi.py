@@ -67,9 +67,24 @@ class ProveedorWhapi(ProveedorWhatsApp):
 
         mensajes = []
         for msg in body.get("messages", []):
-            # Ignorar mensajes propios (enviados por el bot)
-            if msg.get("from_me", False):
-                logger.debug("Ignorando mensaje propio del bot")
+            es_propio = msg.get("from_me", False)
+
+            # Para mensajes propios: extraer solo el texto y pasar para que main.py
+            # pueda guardar mensajes manuales de Victor como contexto histórico
+            if es_propio:
+                tipo = msg.get("type", "")
+                texto_propio = ""
+                if tipo == "text":
+                    texto_propio = msg.get("text", {}).get("body", "").strip()
+                elif tipo == "image":
+                    texto_propio = msg.get("image", {}).get("caption", "").strip() or "[Imagen]"
+                if texto_propio:
+                    mensajes.append(MensajeEntrante(
+                        telefono=msg.get("chat_id", "").strip(),
+                        texto=texto_propio,
+                        mensaje_id=msg.get("id", ""),
+                        es_propio=True,
+                    ))
                 continue
 
             # Extraer teléfono y ID
