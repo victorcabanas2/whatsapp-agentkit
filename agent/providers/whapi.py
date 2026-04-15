@@ -88,6 +88,7 @@ class ProveedorWhapi(ProveedorWhatsApp):
             texto = ""
             imagen_url = None
             contexto_payload = None  # Para guardar metadata del anuncio
+            ad_headline = None  # Título del anuncio Meta (el campo más útil para identificar el producto)
 
             # TIPO 1: Mensaje de texto normal (incluyendo replies/citas)
             if tipo_msg == "text":
@@ -157,6 +158,12 @@ class ProveedorWhapi(ProveedorWhatsApp):
 
                     if source_type == "ad" or source_id:
                         # Esto es un anuncio Meta
+                        # Guardar headline — es la forma más confiable de saber qué producto es
+                        ad_body = root_referral.get("body", "").strip()
+                        if headline or ad_body:
+                            ad_headline = headline or ad_body
+                            logger.info(f"🎯 Headline del anuncio: {ad_headline}")
+
                         if source_id and not contexto_payload:
                             contexto_payload = source_id
                             logger.info(f"🎯 Contexto de anuncio detectado (desde referral): {source_id}")
@@ -283,7 +290,8 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 contexto_anuncio={
                     "payload": contexto_payload.split("|URL:")[0] if contexto_payload else None,
                     "ad_url": ad_url,
-                } if contexto_payload else None,
+                    "headline": ad_headline,  # Título del anuncio — clave para identificar el producto
+                } if (contexto_payload or ad_headline) else None,
             ))
             logger.info(f"📨 Mensaje parseado: {telefono} → {texto[:60]}...")
 

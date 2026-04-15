@@ -167,12 +167,14 @@ async def identificar_producto_desde_anuncio(
     imagen_url: str | None = None,
     ad_url: str | None = None,
     payload: str | None = None,
+    headline: str | None = None,
 ) -> str | None:
     """
-    Identifica el producto desde un anuncio usando 3 capas en cascada.
+    Identifica el producto desde un anuncio usando 4 capas en cascada.
 
     Orden de prioridad:
-    1. Analizar imagen del anuncio (Claude Vision) — más confiable
+    0. Headline del anuncio (texto del título configurado por el anunciante) — MÁS RÁPIDO
+    1. Analizar imagen del anuncio (Claude Vision) — muy confiable
     2. Scrapear y analizar URL del anuncio (httpx + Claude)
     3. Mapeo hardcoded usando payload/ID (fallback)
 
@@ -180,10 +182,29 @@ async def identificar_producto_desde_anuncio(
         imagen_url: URL de la imagen del anuncio
         ad_url: URL del anuncio en Facebook o página de producto
         payload: ID o string del anuncio (para mapeo hardcoded)
+        headline: Título del anuncio Meta (campo más confiable cuando existe)
 
     Returns:
         Nombre del producto identificado o None si no se puede identificar
     """
+
+    # ═══════════════════════════════════════════════════════════
+    # CAPA 0 — Headline del anuncio (sin costo, instantáneo)
+    # Cuando Victor crea un anuncio de "Theragun Mini", el headline
+    # es algo como "Theragun Mini 3.0 - Recuperación muscular"
+    # ═══════════════════════════════════════════════════════════
+
+    if headline:
+        logger.info(f"🏷️ Capa 0: Identificando desde headline del anuncio: {headline[:60]}")
+        producto = mapear_anuncio_a_producto(headline)
+        if producto and producto != headline:  # Encontró match en el mapa
+            logger.info(f"✓ Headline identificó producto: {producto}")
+            return producto
+        # Si no matcheó keywords, usar el headline completo (Claude lo interpretará)
+        # Solo si el headline parece un nombre de producto (no un ID numérico)
+        if headline and not headline.isdigit() and len(headline) > 3:
+            logger.info(f"✓ Usando headline completo como nombre de producto: {headline}")
+            return headline
 
     # ═══════════════════════════════════════════════════════════
     # CAPA 1 — Claude Vision (imagen del anuncio)

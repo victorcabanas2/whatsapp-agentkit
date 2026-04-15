@@ -1,0 +1,22 @@
+# config/ads.yaml — Mapa de anuncios Meta a productos
+# ─────────────────────────────────────────────────────────────────────────────
+# Cuando crees un anuncio en Meta, agrega aquí su ID o parte del nombre
+# para que Belén sepa exactamente qué producto es y responda sin preguntar.
+#
+# Cómo obtener el ad_id:
+#   1. Meta Business Manager → Ads → selecciona el anuncio → copia el ID
+#   2. O usa el source_id que aparece en los logs de Railway cuando llega un cliente
+#
+# Formato:
+#   "ID_DEL_ANUNCIO": "Nombre Exacto del Producto"
+#
+# También funciona con partes del nombre del anuncio (no solo IDs exactos)
+# ─────────────────────────────────────────────────────────────────────────────
+
+ad_products:
+  # Ejemplos (reemplaza con tus IDs reales):
+  # "120208394832510": "Theragun Mini 3.0"
+  # "120208394832511": "TheraCup"
+  # "120208394832512": "WHOOP ONE 5.0"
+  # "theragun_mini_abril": "Theragun Mini 3.0"
+  # "jetboots_promo": "JetBoots Prime"

@@ -489,19 +489,26 @@ async def _procesar_mensaje_individual(msg):
         if msg.anuncio_id or msg.payload or msg.contexto_anuncio or viene_de_anuncio_probablemente:
             anuncio_info = msg.anuncio_id or msg.payload or (msg.contexto_anuncio.get("payload") if msg.contexto_anuncio else None)
             ad_url = msg.contexto_anuncio.get("ad_url") if msg.contexto_anuncio else None
+            # El headline es el título del anuncio configurado por Victor — ej: "Theragun Mini 3.0 - Recuperación muscular"
+            headline = msg.contexto_anuncio.get("headline") if msg.contexto_anuncio else None
 
-            logger.info(f"📢 CLIENTE VIENE DE ANUNCIO: {anuncio_info}")
+            logger.info(f"📢 CLIENTE VIENE DE ANUNCIO: {anuncio_info} | headline: {headline}")
 
             producto_identificado = await identificar_producto_desde_anuncio(
                 imagen_url=msg.imagen_url,
                 ad_url=ad_url,
                 payload=anuncio_info,
+                headline=headline,
             )
 
             if not producto_identificado:
                 producto_identificado = mapear_anuncio_a_producto(anuncio_info) if anuncio_info else None
 
-            if not producto_identificado and viene_de_anuncio_probablemente:
+            # Si tiene contexto de anuncio real (no solo heurística), siempre responder directamente
+            tiene_contexto_real = bool(msg.anuncio_id or msg.payload or msg.contexto_anuncio)
+
+            if not producto_identificado and viene_de_anuncio_probablemente and not tiene_contexto_real:
+                # Solo preguntar si no hay NINGÚN dato del anuncio
                 contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente probablemente viene de un ANUNCIO en Instagram/Facebook.")
                 contexto_sistema.append(f"✅ El cliente escribió: \"{msg.texto}\"")
                 contexto_sistema.append(f"✅ ESTRATEGIA: Pregunta de forma natural cuál PRODUCTO vio en el anuncio.")
@@ -509,13 +516,16 @@ async def _procesar_mensaje_individual(msg):
                 contexto_sistema.append(f"✅ Una vez que diga cuál, dale TODA la información sin preguntar más.")
                 mensaje_contextualizado = f"[CLIENTE DE ANUNCIO - IDENTIFICA QUÉ PRODUCTO] {msg.texto}"
             else:
-                contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente hizo clic en un anuncio específico.")
-                contexto_sistema.append(f"ID/Datos del anuncio: {anuncio_info}")
-                contexto_sistema.append(f"Producto identificado: {producto_identificado}")
-                contexto_sistema.append(f"✅ TÚ CONOCES el producto que vio. NO preguntes 'de qué producto es'.")
-                contexto_sistema.append(f"✅ Dale toda la información sobre: {producto_identificado}")
-                contexto_sistema.append(f"✅ Precio, stock, beneficios, link — todo sin preguntar qué es.")
-                mensaje_contextualizado = f"[CLIENTE VIENE DE ANUNCIO DE: {producto_identificado}] {msg.texto}"
+                # Tenemos información del anuncio — responder directamente sin preguntar
+                nombre_producto = producto_identificado or headline or anuncio_info or "el producto del anuncio"
+                contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente hizo clic en un anuncio específico de Meta Ads.")
+                if headline:
+                    contexto_sistema.append(f"Anuncio: \"{headline}\"")
+                contexto_sistema.append(f"Producto identificado: {nombre_producto}")
+                contexto_sistema.append(f"✅ TÚ YA SABES qué producto es. NO preguntes 'de qué producto es tu consulta'.")
+                contexto_sistema.append(f"✅ Responde DIRECTAMENTE con toda la información sobre: {nombre_producto}")
+                contexto_sistema.append(f"✅ Incluye: precio, stock actual, beneficios principales y link de compra.")
+                mensaje_contextualizado = f"[CLIENTE VIENE DE ANUNCIO DE: {nombre_producto}] {msg.texto}"
 
         # CASO 2: Reply a mensaje anterior
         if msg.reply_a_texto:

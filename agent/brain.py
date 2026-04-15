@@ -94,19 +94,49 @@ def obtener_mensaje_fallback() -> str:
     return config.get("fallback_message", "Disculpa, no entendí tu mensaje. ¿Podrías reformularlo?")
 
 
+def _cargar_ads_yaml() -> dict:
+    """Carga el mapa de anuncios desde config/ads.yaml."""
+    try:
+        with open("config/ads.yaml", "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+            return data.get("ad_products", {})
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        logger.warning(f"⚠️ Error cargando ads.yaml: {e}")
+        return {}
+
+
 def mapear_anuncio_a_producto(anuncio_id: str) -> str:
     """
-    Mapea un ID de anuncio Meta a un producto conocido.
+    Mapea un ID o título de anuncio Meta a un producto conocido.
 
-    Ejemplo: "theragun_mini_ad_campaign_april_2026" → "Theragun Mini 3.0"
+    Orden de búsqueda:
+    1. config/ads.yaml — mapping exacto configurado por Victor
+    2. Keywords hardcoded — matching por palabras clave en el texto
 
     Args:
-        anuncio_id: ID del anuncio de Meta
+        anuncio_id: ID numérico de Meta, título del anuncio, o cualquier texto del anuncio
 
     Returns:
         Nombre del producto o el ID original si no se puede mapear
     """
-    # Mapeo de IDs comunes a productos (este mapeo crece según los anuncios)
+    # PASO 1: Buscar en ads.yaml (exact match primero, luego substring)
+    ads_map = _cargar_ads_yaml()
+    if ads_map:
+        anuncio_lower = anuncio_id.lower()
+        # Exact match
+        if anuncio_id in ads_map:
+            producto = ads_map[anuncio_id]
+            logger.info(f"✓ Producto desde ads.yaml (exacto): {anuncio_id} → {producto}")
+            return producto
+        # Substring match (el ID del anuncio puede aparecer dentro del texto del headline)
+        for ad_key, producto in ads_map.items():
+            if ad_key.lower() in anuncio_lower or anuncio_lower in ad_key.lower():
+                logger.info(f"✓ Producto desde ads.yaml (substring): {anuncio_id} → {producto}")
+                return producto
+
+    # PASO 2: Keywords hardcoded — funciona con títulos de anuncios y variaciones
     # Incluye múltiples variaciones para cada producto
     mapeos = {
         # Therabody — Theragun (percutor)
