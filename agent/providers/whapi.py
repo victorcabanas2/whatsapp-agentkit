@@ -103,6 +103,25 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 if quoted_msg:
                     quoted_text = quoted_msg.get("body", "").strip()
                     quoted_id = quoted_msg.get("id", "").strip()
+
+                    # Si el mensaje citado no tiene texto (es imagen/video/doc), describir el tipo
+                    if not quoted_text:
+                        quoted_type = quoted_msg.get("type", "")
+                        quoted_caption = quoted_msg.get("caption", "").strip()
+                        if quoted_type == "image":
+                            quoted_text = f"[Imagen{': ' + quoted_caption if quoted_caption else ''}]"
+                        elif quoted_type == "video":
+                            quoted_text = "[Video]"
+                        elif quoted_type == "document":
+                            doc_name = quoted_msg.get("filename", "")
+                            quoted_text = f"[Documento{': ' + doc_name if doc_name else ''}]"
+                        elif quoted_type == "audio":
+                            quoted_text = "[Audio]"
+                        elif quoted_type:
+                            quoted_text = f"[{quoted_type}]"
+                        else:
+                            quoted_text = "[Mensaje anterior]"
+
                     reply_a_msg_id = quoted_id if quoted_id else None
                     reply_a_msg_texto = quoted_text
                     # Prepender el contexto del mensaje citado
