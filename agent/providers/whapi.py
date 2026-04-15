@@ -242,11 +242,23 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 contexto_payload = source_id if source_id else source_type
                 logger.info(f"✅ Referral de anuncio: {source_type}")
 
-            # TIPO 7: Audio — detectar y marcar para respuesta polite
-            elif tipo_msg == "audio":
-                audio_link = msg.get("audio", {}).get("link", "")
-                texto = f"[AUDIO_RECIBIDO:{audio_link}]" if audio_link else "[AUDIO_RECIBIDO]"
-                logger.info(f"🎵 Audio recibido de {telefono}")
+            # TIPO 7: Audio / Voz — transcribir con Whisper si hay OPENAI_API_KEY
+            elif tipo_msg in ("audio", "voice"):
+                media_data = msg.get("voice", msg.get("audio", {}))
+                audio_link = media_data.get("link", "")
+                duracion = media_data.get("seconds", 0)
+                logger.info(f"🎤 Mensaje de voz recibido ({duracion}s) de {telefono}")
+
+                if audio_link:
+                    transcripcion = await self._transcribir_audio(audio_link)
+                    if transcripcion:
+                        texto = transcripcion
+                        logger.info(f"✅ Audio transcrito: {texto[:80]}...")
+                    else:
+                        texto = "[AUDIO_SIN_TRANSCRIBIR]"
+                        logger.warning(f"⚠️ Audio sin transcribir de {telefono}")
+                else:
+                    texto = "[AUDIO_SIN_TRANSCRIBIR]"
 
             # TIPO 8: Video
             elif tipo_msg == "video":
@@ -296,6 +308,46 @@ class ProveedorWhapi(ProveedorWhatsApp):
             logger.info(f"📨 Mensaje parseado: {telefono} → {texto[:60]}...")
 
         return mensajes
+
+    async def _transcribir_audio(self, audio_url: str) -> str:
+        """
+        Descarga un audio de WhatsApp y lo transcribe con OpenAI Whisper.
+        Requiere OPENAI_API_KEY en .env.
+        Retorna el texto transcrito, o "" si falla o no hay API key.
+        """
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if not openai_key:
+            logger.debug("OPENAI_API_KEY no configurado — transcripción de audio deshabilitada")
+            return ""
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # 1. Descargar el audio desde el enlace de Whapi/Wasabi
+                descarga = await client.get(audio_url)
+                if descarga.status_code != 200:
+                    logger.error(f"❌ Error descargando audio ({descarga.status_code}): {audio_url[:60]}")
+                    return ""
+                audio_bytes = descarga.content
+
+                # 2. Enviar a OpenAI Whisper /v1/audio/transcriptions
+                response = await client.post(
+                    "https://api.openai.com/v1/audio/transcriptions",
+                    headers={"Authorization": f"Bearer {openai_key}"},
+                    files={
+                        "file": ("audio.ogg", audio_bytes, "audio/ogg"),
+                        "model": (None, "whisper-1"),
+                        "language": (None, "es"),
+                    },
+                    timeout=30.0,
+                )
+                if response.status_code == 200:
+                    return response.json().get("text", "").strip()
+                else:
+                    logger.error(f"❌ Error Whisper API ({response.status_code}): {response.text[:200]}")
+                    return ""
+        except Exception as e:
+            logger.error(f"❌ Excepción transcribiendo audio: {e}")
+            return ""
 
     async def enviar_imagen(self, telefono: str, imagen_data: str, caption: str = "") -> bool:
         """Envía una imagen via Whapi.cloud. Acepta URL o base64."""

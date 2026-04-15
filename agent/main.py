@@ -450,7 +450,7 @@ async def _procesar_mensaje_individual(msg):
     telefono = msg.telefono
 
     # ── AUDIO: responder con mensaje polite y salir ─────────
-    if msg.texto.startswith("[AUDIO_RECIBIDO"):
+    if msg.texto.startswith(("[AUDIO_RECIBIDO", "[AUDIO_SIN_TRANSCRIBIR")):
         await _enviar_respuesta_audio(telefono)
         return
 
@@ -707,7 +707,7 @@ async def webhook_handler(request: Request):
                 continue
 
             # Audio — responder de inmediato sin buffer
-            if msg.texto.startswith("[AUDIO_RECIBIDO"):
+            if msg.texto.startswith(("[AUDIO_RECIBIDO", "[AUDIO_SIN_TRANSCRIBIR")):
                 asyncio.create_task(_enviar_respuesta_audio(msg.telefono))
                 continue
 
