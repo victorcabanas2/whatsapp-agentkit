@@ -216,6 +216,23 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 contexto_payload = source_id if source_id else source_type
                 logger.info(f"✅ Referral de anuncio: {source_type}")
 
+            # TIPO 7: Audio — detectar y marcar para respuesta polite
+            elif tipo_msg == "audio":
+                audio_link = msg.get("audio", {}).get("link", "")
+                texto = f"[AUDIO_RECIBIDO:{audio_link}]" if audio_link else "[AUDIO_RECIBIDO]"
+                logger.info(f"🎵 Audio recibido de {telefono}")
+
+            # TIPO 8: Video
+            elif tipo_msg == "video":
+                texto = "[Video enviado]"
+                logger.debug(f"Video recibido de {telefono}")
+
+            # TIPO 9: Documento/archivo
+            elif tipo_msg == "document":
+                doc_name = msg.get("document", {}).get("filename", "archivo")
+                texto = f"[Documento enviado: {doc_name}]"
+                logger.debug(f"Documento recibido de {telefono}")
+
             else:
                 logger.warning(f"⚠️ Tipo de mensaje no reconocido: {tipo_msg}")
                 continue

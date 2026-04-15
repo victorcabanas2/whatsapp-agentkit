@@ -89,6 +89,13 @@ ADMIN_WHATSAPP = os.getenv("ADMIN_WHATSAPP", "+595986147509")
 # Chats silenciados (admin tomó control)
 MUTED_CHATS = set()  # {telefono1, telefono2, ...}
 
+# ════════════════════════════════════════════════════════════
+# BUFFERING DE MENSAJES — Agrupa mensajes rápidos del mismo cliente
+# ════════════════════════════════════════════════════════════
+PENDING_MESSAGES: dict[str, list] = {}   # telefono → [MensajeEntrante, ...]
+PENDING_TASKS: dict[str, asyncio.Task] = {}  # telefono → asyncio.Task
+BUFFER_DELAY = 3.5  # segundos de espera para acumular mensajes
+
 
 # ════════════════════════════════════════════════════════════
 # LEAD SCORING — Detección de intención y urgencia
@@ -258,6 +265,93 @@ async def enviar_imagen(telefono: str, url_imagen: str) -> bool:
         return False
 
 
+def _combinar_mensajes(messages: list) -> object:
+    """
+    Combina múltiples mensajes del mismo cliente en uno solo.
+    Descarta typos muy cortos (1-3 chars) si van seguidos de una corrección.
+    """
+    if len(messages) == 1:
+        return messages[0]
+
+    textos_validos = []
+    imagen_final = None
+
+    for i, msg in enumerate(messages):
+        texto = msg.texto.strip()
+        hay_siguiente = i < len(messages) - 1
+
+        # Saltar mensajes muy cortos (posible typo) si hay un mensaje posterior más largo
+        if hay_siguiente and 1 <= len(texto) <= 3 and texto.isalpha():
+            logger.debug(f"📝 Posible typo ignorado: '{texto}'")
+            continue
+
+        if texto:
+            textos_validos.append(texto)
+
+        if msg.imagen_url:
+            imagen_final = msg.imagen_url
+
+    # Usar el último mensaje como base (metadata más reciente)
+    combined = messages[-1]
+    if textos_validos:
+        combined.texto = "\n".join(textos_validos)
+    if imagen_final and not combined.imagen_url:
+        combined.imagen_url = imagen_final
+
+    return combined
+
+
+async def _handle_admin_command(msg) -> bool:
+    """
+    Procesa comandos de admin (/takeover, /release).
+    Retorna True si fue un comando admin y fue manejado.
+    """
+    if msg.telefono != ADMIN_WHATSAPP:
+        return False
+
+    if msg.texto.startswith("/takeover"):
+        parts = msg.texto.split()
+        if len(parts) > 1:
+            target = parts[1]
+            from agent.memory import tomar_control
+            exito = await tomar_control(target)
+            if exito:
+                MUTED_CHATS.add(target)
+                await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} silenciado. Bot no responderá.")
+                logger.info(f"🔇 Admin silencia chat {target}")
+            else:
+                await proveedor.enviar_mensaje(msg.telefono, f"❌ No encontré el lead {target}")
+        return True
+
+    if msg.texto.startswith("/release"):
+        parts = msg.texto.split()
+        if len(parts) > 1:
+            target = parts[1]
+            from agent.memory import liberar_control
+            exito = await liberar_control(target)
+            if exito:
+                MUTED_CHATS.discard(target)
+                await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} activado. Bot responderá nuevamente.")
+                logger.info(f"🔊 Admin reactiva chat {target}")
+            else:
+                await proveedor.enviar_mensaje(msg.telefono, f"❌ No encontré el lead {target}")
+        return True
+
+    return False
+
+
+async def _enviar_respuesta_audio(telefono: str):
+    """Responde amablemente cuando el cliente envía un audio."""
+    respuesta = "Disculpá, por el momento no puedo escuchar audios 🙏 ¿Me podés escribir tu consulta?"
+    try:
+        await proveedor.enviar_mensaje(telefono, respuesta)
+        await guardar_mensaje(telefono, "user", "[Audio enviado — no procesado]")
+        await guardar_mensaje(telefono, "assistant", respuesta)
+        logger.info(f"🎵 Respuesta de audio enviada a {telefono}")
+    except Exception as e:
+        logger.error(f"Error enviando respuesta de audio a {telefono}: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Inicializa recursos al arrancar el servidor."""
@@ -348,326 +442,277 @@ async def webhook_get_verification(request: Request):
     return JSONResponse({"status": "ok"})
 
 
+async def _procesar_mensaje_individual(msg):
+    """
+    Procesa un mensaje (ya combinado si hubo varios del mismo cliente).
+    Maneja contexto, Claude, respuesta, scoring y alertas.
+    """
+    telefono = msg.telefono
+
+    # ── AUDIO: responder con mensaje polite y salir ─────────
+    if msg.texto.startswith("[AUDIO_RECIBIDO"):
+        await _enviar_respuesta_audio(telefono)
+        return
+
+    logger.info(f"📨 Procesando mensaje de {telefono}: {msg.texto[:80]}...")
+
+    try:
+        # Registrar lead
+        lead = await registrar_lead(telefono)
+        es_nuevo_lead = (datetime.utcnow() - lead.primer_contacto).total_seconds() < 60
+
+        # Historial
+        historial = await obtener_historial(telefono, limite=100)
+        logger.info(f"✓ Historial cargado: {len(historial)} mensajes")
+
+        # ── CONTEXTUALIZACIÓN: Anuncios + Replies ──────────
+        mensaje_contextualizado = msg.texto
+        contexto_sistema = []
+
+        logger.info(f"🔍 DEBUG ANUNCIO - anuncio_id: {msg.anuncio_id}")
+        logger.info(f"🔍 payload: {msg.payload}")
+        logger.info(f"🔍 contexto_anuncio: {msg.contexto_anuncio}")
+        logger.info(f"🔍 imagen_url: {msg.imagen_url}")
+
+        es_cliente_nuevo = len(historial) == 0
+        es_mensaje_corto = len(msg.texto) < 100
+        tiene_palabras_clave = any(
+            palabra in msg.texto.lower()
+            for palabra in ["quiero", "información", "precio", "más info", "porfa", "me interesa"]
+        )
+        viene_de_anuncio_probablemente = es_cliente_nuevo and es_mensaje_corto and tiene_palabras_clave
+
+        if viene_de_anuncio_probablemente:
+            logger.info(f"🎯 CLIENTE NUEVO + MENSAJE GENÉRICO → Probablemente viene de anuncio")
+
+        # CASO 1: Anuncio Meta Ads
+        if msg.anuncio_id or msg.payload or msg.contexto_anuncio or viene_de_anuncio_probablemente:
+            anuncio_info = msg.anuncio_id or msg.payload or (msg.contexto_anuncio.get("payload") if msg.contexto_anuncio else None)
+            ad_url = msg.contexto_anuncio.get("ad_url") if msg.contexto_anuncio else None
+
+            logger.info(f"📢 CLIENTE VIENE DE ANUNCIO: {anuncio_info}")
+
+            producto_identificado = await identificar_producto_desde_anuncio(
+                imagen_url=msg.imagen_url,
+                ad_url=ad_url,
+                payload=anuncio_info,
+            )
+
+            if not producto_identificado:
+                producto_identificado = mapear_anuncio_a_producto(anuncio_info) if anuncio_info else None
+
+            if not producto_identificado and viene_de_anuncio_probablemente:
+                contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente probablemente viene de un ANUNCIO en Instagram/Facebook.")
+                contexto_sistema.append(f"✅ El cliente escribió: \"{msg.texto}\"")
+                contexto_sistema.append(f"✅ ESTRATEGIA: Pregunta de forma natural cuál PRODUCTO vio en el anuncio.")
+                contexto_sistema.append(f"✅ Ejemplo: '¿Fue el TheraCup, FAO 211, WHOOP o Theragun que viste en el anuncio?'")
+                contexto_sistema.append(f"✅ Una vez que diga cuál, dale TODA la información sin preguntar más.")
+                mensaje_contextualizado = f"[CLIENTE DE ANUNCIO - IDENTIFICA QUÉ PRODUCTO] {msg.texto}"
+            else:
+                contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente hizo clic en un anuncio específico.")
+                contexto_sistema.append(f"ID/Datos del anuncio: {anuncio_info}")
+                contexto_sistema.append(f"Producto identificado: {producto_identificado}")
+                contexto_sistema.append(f"✅ TÚ CONOCES el producto que vio. NO preguntes 'de qué producto es'.")
+                contexto_sistema.append(f"✅ Dale toda la información sobre: {producto_identificado}")
+                contexto_sistema.append(f"✅ Precio, stock, beneficios, link — todo sin preguntar qué es.")
+                mensaje_contextualizado = f"[CLIENTE VIENE DE ANUNCIO DE: {producto_identificado}] {msg.texto}"
+
+        # CASO 2: Reply a mensaje anterior
+        if msg.reply_a_texto:
+            logger.info(f"↩️ CLIENTE RESPONDE A MENSAJE: {msg.reply_a_texto[:60]}...")
+            contexto_sistema.append(f"↩️ CONTEXTO DE REPLY: El cliente está respondiendo a este mensaje:")
+            contexto_sistema.append(f"Mensaje al que responde: \"{msg.reply_a_texto[:200]}\"")
+            contexto_sistema.append(f"✅ INTERPRETA la respuesta en ese contexto.")
+            contexto_sistema.append(f"✅ Si el mensaje es de Victor (el dueño), reconocé que ya hubo conversación previa.")
+            contexto_sistema.append(f"✅ NO saludés de cero si ya hay contexto anterior.")
+            mensaje_contextualizado = f"[Reply a: '{msg.reply_a_texto[:100]}'] {msg.texto}"
+
+        if contexto_sistema:
+            logger.debug(f"📌 Contexto especial:\n" + "\n".join(contexto_sistema))
+
+        # ── MUTE CHECK ──────────────────────────────────────
+        lead_check = await obtener_lead(telefono)
+        if lead_check and lead_check.en_manos_humanas:
+            logger.info(f"🔇 Chat {telefono} en manos humanas. Bot no responde.")
+            return
+
+        if telefono in MUTED_CHATS:
+            logger.info(f"🔇 Chat {telefono} silenciado.")
+            return
+
+        # ── GENERAR RESPUESTA CON CLAUDE ────────────────────
+        logger.debug("Llamando a Claude AI...")
+        respuesta_raw = await generar_respuesta(
+            mensaje_contextualizado,
+            historial,
+            imagen_url=msg.imagen_url,
+            contexto_adicional="\n".join(contexto_sistema) if contexto_sistema else None
+        )
+
+        from agent.brain import extraer_imagen_de_respuesta, obtener_url_imagen, detectar_y_programar_seguimiento
+        respuesta_limpia, product_id = extraer_imagen_de_respuesta(respuesta_raw)
+        url_imagen_producto = obtener_url_imagen(product_id) if product_id else None
+
+        # ── SEGUIMIENTOS DINÁMICOS ──────────────────────────
+        respuesta_limpia = await detectar_y_programar_seguimiento(
+            mensaje_usuario=msg.texto,
+            respuesta_belén=respuesta_limpia,
+            telefono=telefono,
+            nombre_cliente=lead.nombre
+        )
+
+        # ── GUARDAR MENSAJES ────────────────────────────────
+        content_a_guardar = f"[IMG:{msg.imagen_url}]\n{msg.texto}" if msg.imagen_url else msg.texto
+        if msg.imagen_url:
+            logger.info(f"📸 Guardando mensaje con imagen: {msg.imagen_url[:60]}...")
+        await guardar_mensaje(telefono, "user", content_a_guardar)
+
+        # ── LEAD SCORING ────────────────────────────────────
+        score_anterior = lead.score
+        intencion_anterior = lead.intencion
+        await calcular_lead_score(telefono, msg.texto, lead)
+        lead = await obtener_lead(telefono)
+
+        # ── ALERTAS AL VENDEDOR ─────────────────────────────
+        if es_nuevo_lead and not lead.alerta_vendedor_enviada:
+            nombre = lead.nombre or telefono
+            await enviar_alerta_vendedor(
+                "nuevo_lead", telefono,
+                f"{nombre} ({telefono})\nDice: '{msg.texto[:80]}...'"
+            )
+            await marcar_alerta_vendedor(telefono)
+
+        if (score_anterior < 50 or intencion_anterior != "hot") and lead.intencion == "hot":
+            nombre = lead.nombre or telefono
+            await enviar_alerta_vendedor(
+                "hot_lead", telefono,
+                f"{nombre} ({telefono})\nScore: {lead.score}/100\nDice: '{msg.texto[:80]}...'"
+            )
+
+        # ── ENVIAR RESPUESTA ────────────────────────────────
+        await guardar_mensaje(telefono, "assistant", respuesta_limpia)
+        exito = await proveedor.enviar_mensaje(telefono, respuesta_limpia)
+
+        if exito:
+            logger.info(f"✓ Respuesta enviada a {telefono}")
+            logger.debug(f"   Respuesta: {respuesta_limpia[:100]}...")
+        else:
+            logger.error(f"✗ Fallo al enviar respuesta a {telefono}")
+
+        if url_imagen_producto:
+            await asyncio.sleep(1)
+            exito_img = await enviar_imagen(telefono, url_imagen_producto)
+            if exito_img:
+                logger.info(f"📸 Imagen enviada a {telefono} (product_id: {product_id})")
+            else:
+                logger.warning(f"⚠️ Error enviando imagen a {telefono}")
+
+        # ── PAGOS ───────────────────────────────────────────
+        metodo_pago = detectar_opcion_pago(respuesta_limpia)
+        if metodo_pago == "transferencia":
+            logger.info(f"💳 {telefono} eligió TRANSFERENCIA — enviando datos bancarios")
+            await enviar_imagen(telefono, IMAGEN_DATOS_BANCARIOS)
+
+        if detectar_confirmacion_pago(msg.texto):
+            logger.info(f"✅ {telefono} confirmó pago")
+            ultimo_pedido = await obtener_ultimo_pedido(telefono)
+            if ultimo_pedido and ultimo_pedido.estado == "pendiente":
+                await actualizar_estado_pedido(ultimo_pedido.id, "pagado")
+                logger.info(f"💰 Pedido #{ultimo_pedido.id} marcado como PAGADO")
+                nombre = lead.nombre or telefono
+                await enviar_alerta_vendedor(
+                    "pago_confirmado", telefono,
+                    f"{nombre} ({telefono})\nProducto: {ultimo_pedido.producto}\nPrecio: {ultimo_pedido.precio} Gs"
+                )
+            else:
+                logger.warning(f"⚠️ No hay pedido pendiente para {telefono}")
+
+    except Exception as e:
+        logger.error(f"✗ Error procesando mensaje de {telefono}: {e}")
+        try:
+            await proveedor.enviar_mensaje(
+                telefono,
+                "Lo siento, estoy teniendo problemas técnicos. Por favor intenta de nuevo en unos minutos."
+            )
+        except Exception as send_error:
+            logger.error(f"✗ No se pudo enviar mensaje de error: {send_error}")
+
+
+async def _esperar_y_procesar(telefono: str):
+    """
+    Espera BUFFER_DELAY segundos acumulando mensajes del mismo cliente,
+    luego los combina y procesa como uno solo.
+    Si llega otro mensaje antes, esta tarea se cancela y se reprograma.
+    """
+    try:
+        await asyncio.sleep(BUFFER_DELAY)
+    except asyncio.CancelledError:
+        logger.debug(f"⏳ Buffer cancelado para {telefono} (llegó otro mensaje)")
+        return
+
+    messages = PENDING_MESSAGES.pop(telefono, [])
+    PENDING_TASKS.pop(telefono, None)
+
+    if not messages:
+        return
+
+    if len(messages) > 1:
+        logger.info(f"📦 Agrupando {len(messages)} mensajes de {telefono} en uno")
+
+    msg = _combinar_mensajes(messages)
+    await _procesar_mensaje_individual(msg)
+
+
 @app.post("/webhook")
 async def webhook_handler(request: Request):
     """
-    Recibe mensajes de WhatsApp desde el proveedor configurado.
-    Procesa cada mensaje con Claude AI y envía respuesta.
+    Recibe mensajes de WhatsApp. Bufferiza por cliente (3.5s) para agrupar
+    mensajes enviados rápido y procesarlos como uno solo.
     """
     try:
-        # Log del payload completo para debugging
         body = await request.json()
         logger.info(f"📨 WEBHOOK PAYLOAD COMPLETO: {body}")
 
-        # Crear un wrapper para pasar el body al proveedor
         class DebugRequest:
             async def json(self):
                 return body
 
-        debug_request = DebugRequest()
-
-        # Parsear webhook — el proveedor normaliza el formato
-        mensajes = await proveedor.parsear_webhook(debug_request)
+        mensajes = await proveedor.parsear_webhook(DebugRequest())
 
         if not mensajes:
             logger.debug("No hay mensajes en el webhook")
             return {"status": "ok"}
 
-        # Procesar cada mensaje
         for msg in mensajes:
-            # Esperar 5 segundos para evitar responder mensajes individuales al mismo tiempo
-            await asyncio.sleep(5)
-
-            # Ignorar mensajes propios
             if msg.es_propio:
                 logger.debug(f"Ignorando mensaje propio de {msg.telefono}")
                 continue
 
-            # Validar contenido
             if not msg.texto or not msg.texto.strip():
                 logger.debug(f"Mensaje vacío de {msg.telefono}")
                 continue
 
-            logger.info(f"📨 Mensaje recibido de {msg.telefono}")
-            logger.debug(f"   Contenido: {msg.texto[:100]}...")
+            # Comandos admin — procesar de inmediato, sin buffer
+            if await _handle_admin_command(msg):
+                continue
 
-            try:
-                # Registrar lead automáticamente (si no existe, lo crea; si existe, actualiza último mensaje)
-                lead = await registrar_lead(msg.telefono)
+            # Audio — responder de inmediato sin buffer
+            if msg.texto.startswith("[AUDIO_RECIBIDO"):
+                asyncio.create_task(_enviar_respuesta_audio(msg.telefono))
+                continue
 
-                # DETECTAR NUEVO LEAD (primera vez que contacta)
-                es_nuevo_lead = (datetime.utcnow() - lead.primer_contacto).total_seconds() < 60  # Hace menos de 1 min
+            # Agregar al buffer del cliente
+            PENDING_MESSAGES.setdefault(msg.telefono, []).append(msg)
+            logger.debug(f"📥 Buffer de {msg.telefono}: {len(PENDING_MESSAGES[msg.telefono])} mensaje(s)")
 
-                # Obtener historial desde SQLite (últimos 100 mensajes)
-                historial = await obtener_historial(msg.telefono, limite=100)
-                logger.info(f"✓ Historial cargado: {len(historial)} mensajes")
+            # Cancelar tarea anterior y reprogramar
+            old_task = PENDING_TASKS.get(msg.telefono)
+            if old_task and not old_task.done():
+                old_task.cancel()
 
-                # ═══════════════════════════════════════════════════════════
-                # CONTEXTUALIZACIÓN: Anuncios + Replies
-                # ═══════════════════════════════════════════════════════════
-
-                mensaje_contextualizado = msg.texto
-                contexto_sistema = []  # Para pasar a Claude el contexto adicional
-
-                # 🔍 DEBUG: Log si se detectó contexto de anuncio
-                logger.info(f"🔍 DEBUG ANUNCIO COMPLETO - anuncio_id: {msg.anuncio_id}")
-                logger.info(f"🔍 payload: {msg.payload}")
-                logger.info(f"🔍 contexto_anuncio: {msg.contexto_anuncio}")
-                logger.info(f"🔍 imagen_url: {msg.imagen_url}")
-
-                # DETECCIÓN AUTOMÁTICA: Si es cliente nuevo + mensaje corto → probablemente viene de anuncio
-                es_cliente_nuevo = len(historial) == 0
-                es_mensaje_corto = len(msg.texto) < 100
-                tiene_palabras_clave = any(
-                    palabra in msg.texto.lower()
-                    for palabra in ["quiero", "información", "precio", "más info", "porfa", "me interesa"]
-                )
-
-                viene_de_anuncio_probablemente = es_cliente_nuevo and es_mensaje_corto and tiene_palabras_clave
-
-                if viene_de_anuncio_probablemente:
-                    logger.info(f"🎯 CLIENTE NUEVO + MENSAJE GENÉRICO → Probablemente viene de anuncio")
-
-                # CASO 1: Mensaje desde un ANUNCIO DE META ADS
-                if msg.anuncio_id or msg.payload or msg.contexto_anuncio or viene_de_anuncio_probablemente:
-                    anuncio_info = msg.anuncio_id or msg.payload or (msg.contexto_anuncio.get("payload") if msg.contexto_anuncio else None)
-                    ad_url = msg.contexto_anuncio.get("ad_url") if msg.contexto_anuncio else None
-
-                    logger.info(f"📢 CLIENTE VIENE DE ANUNCIO: {anuncio_info}")
-
-                    # ═══════════════════════════════════════════════════════════
-                    # IDENTIFICAR PRODUCTO CON 3 CAPAS (imagen → URL → mapeo)
-                    # ═══════════════════════════════════════════════════════════
-
-                    producto_identificado = await identificar_producto_desde_anuncio(
-                        imagen_url=msg.imagen_url,
-                        ad_url=ad_url,
-                        payload=anuncio_info,
-                    )
-
-                    # Si ad_analyzer no encontró nada, usar el mapeo directo como fallback
-                    if not producto_identificado:
-                        producto_identificado = mapear_anuncio_a_producto(anuncio_info) if anuncio_info else None
-
-                    # Si aún no identifica, pero es cliente nuevo, hacer que Claude sea INTELIGENTE
-                    if not producto_identificado and viene_de_anuncio_probablemente:
-                        contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente probablemente viene de un ANUNCIO en Instagram/Facebook.")
-                        contexto_sistema.append(f"✅ El cliente escribió: \"{msg.texto}\"")
-                        contexto_sistema.append(f"✅ ESTRATEGIA: Pregunta de forma natural cuál PRODUCTO vio en el anuncio.")
-                        contexto_sistema.append(f"✅ Ejemplo: '¿Fue el TheraCup, FAO™ 211, WHOOP o Theragun que viste en el anuncio?'")
-                        contexto_sistema.append(f"✅ Una vez que diga cuál, dale TODA la información (precio, beneficios, stock) SIN preguntar más.")
-                        mensaje_contextualizado = f"[CLIENTE DE ANUNCIO - IDENTIFICA QUÉ PRODUCTO] {msg.texto}"
-                    else:
-                        # Tenemos producto identificado
-                        contexto_sistema.append(f"🎯 CONTEXTO CRÍTICO: Este cliente hizo clic en un anuncio específico.")
-                        contexto_sistema.append(f"ID/Datos del anuncio: {anuncio_info}")
-                        contexto_sistema.append(f"Producto identificado: {producto_identificado}")
-                        contexto_sistema.append(f"✅ TÚ CONOCES el producto que vio. NO preguntes 'de qué producto es'.")
-                        contexto_sistema.append(f"✅ Dale toda la información sobre: {producto_identificado}")
-                        contexto_sistema.append(f"✅ Precio, stock, beneficios, link — todo sin preguntar qué es.")
-                        mensaje_contextualizado = f"[CLIENTE VIENE DE ANUNCIO DE: {producto_identificado}] {msg.texto}"
-
-                # CASO 2: Mensaje es un REPLY a otro mensaje
-                if msg.reply_a_texto:
-                    logger.info(f"↩️ CLIENTE RESPONDE A MENSAJE PREVIO: {msg.reply_a_texto[:60]}...")
-
-                    contexto_sistema.append(f"↩️ CONTEXTO DE REPLY: Este cliente está respondiendo a tu mensaje anterior:")
-                    contexto_sistema.append(f"Tu pregunta anterior fue: \"{msg.reply_a_texto[:150]}...\"")
-                    contexto_sistema.append(f"✅ INTERPRETA la respuesta en el contexto de esa pregunta.")
-                    contexto_sistema.append(f"✅ NO repitas la pregunta. El cliente ya te está respondiendo.")
-
-                    # Agregar el contexto del reply al mensaje
-                    mensaje_contextualizado = f"[Reply a tu pregunta: '{msg.reply_a_texto[:80]}...'] Dice: {msg.texto}"
-
-                # Agregar contexto al inicio del historial para que Claude lo considere
-                if contexto_sistema:
-                    logger.debug(f"📌 Contexto especial para Claude:\n" + "\n".join(contexto_sistema))
-                    # El contexto se pasará como un mensaje de sistema adicional en generar_respuesta
-
-                # ═══════════════════════════════════════════════════════════
-                # COMANDOS ADMIN (solo desde ADMIN_WHATSAPP)
-                # ═══════════════════════════════════════════════════════════
-
-                if msg.telefono == ADMIN_WHATSAPP:
-                    if msg.texto.startswith("/takeover"):
-                        # /takeover TELEFONO → silenciar ese chat
-                        parts = msg.texto.split()
-                        if len(parts) > 1:
-                            target = parts[1]
-                            from agent.memory import tomar_control
-                            exito = await tomar_control(target)
-                            if exito:
-                                MUTED_CHATS.add(target)
-                                await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} silenciado. Bot no responderá.")
-                                logger.info(f"🔇 Admin silencia chat {target}")
-                            else:
-                                await proveedor.enviar_mensaje(msg.telefono, f"❌ No encontré el lead {target}")
-                        return {"status": "ok"}
-
-                    if msg.texto.startswith("/release"):
-                        # /release TELEFONO → reactivar ese chat
-                        parts = msg.texto.split()
-                        if len(parts) > 1:
-                            target = parts[1]
-                            from agent.memory import liberar_control
-                            exito = await liberar_control(target)
-                            if exito:
-                                MUTED_CHATS.discard(target)
-                                await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} activado. Bot responderá nuevamente.")
-                                logger.info(f"🔊 Admin reactiva chat {target}")
-                            else:
-                                await proveedor.enviar_mensaje(msg.telefono, f"❌ No encontré el lead {target}")
-                        return {"status": "ok"}
-
-                # VALIDAR si chat está silenciado — leer de BD
-                lead_check = await obtener_lead(msg.telefono)
-                if lead_check and lead_check.en_manos_humanas:
-                    logger.info(f"🔇 Chat {msg.telefono} está en manos humanas. Bot no responde.")
-                    return {"status": "ok"}
-
-                # También chequear memoria como fallback
-                if msg.telefono in MUTED_CHATS:
-                    logger.info(f"🔇 Chat {msg.telefono} está silenciado. No responder.")
-                    return {"status": "ok"}
-
-                # Generar respuesta con Claude
-                logger.debug("Llamando a Claude AI...")
-                respuesta_raw = await generar_respuesta(
-                    mensaje_contextualizado,
-                    historial,
-                    imagen_url=msg.imagen_url,
-                    contexto_adicional="\n".join(contexto_sistema) if contexto_sistema else None
-                )
-
-                # Extraer imagen si Claude la incluyó en la respuesta
-                from agent.brain import extraer_imagen_de_respuesta, obtener_url_imagen, detectar_y_programar_seguimiento
-                respuesta_limpia, product_id = extraer_imagen_de_respuesta(respuesta_raw)
-                url_imagen_producto = obtener_url_imagen(product_id) if product_id else None
-
-                # ═══════════════════════════════════════════════════════════
-                # DETECTAR Y PROGRAMAR SEGUIMIENTOS DINÁMICOS
-                # ═══════════════════════════════════════════════════════════
-                # Si el cliente pidió un seguimiento ("escríbeme en 4 minutos"), programarlo automático
-                respuesta_con_confirmacion = await detectar_y_programar_seguimiento(
-                    mensaje_usuario=msg.texto,
-                    respuesta_belén=respuesta_limpia,
-                    telefono=msg.telefono,
-                    nombre_cliente=lead.nombre
-                )
-                respuesta_limpia = respuesta_con_confirmacion
-
-                # Guardar mensaje del usuario (con imagen_url si existe)
-                if msg.imagen_url:
-                    content_a_guardar = f"[IMG:{msg.imagen_url}]\n{msg.texto}"
-                    logger.info(f"📸 Guardando mensaje con imagen: {msg.imagen_url[:60]}...")
-                else:
-                    content_a_guardar = msg.texto
-
-                await guardar_mensaje(msg.telefono, "user", content_a_guardar)
-
-                # ═══════════════════════════════════════════════════════════
-                # LEAD SCORING — Clasificar cliente por potencial
-                # ═══════════════════════════════════════════════════════════
-
-                score_anterior = lead.score
-                intencion_anterior = lead.intencion
-
-                await calcular_lead_score(msg.telefono, msg.texto, lead)
-
-                # Recargar lead para obtener nuevos valores
-                lead = await obtener_lead(msg.telefono)
-
-                # ═══════════════════════════════════════════════════════════
-                # ALERTAS AL VENDEDOR
-                # ═══════════════════════════════════════════════════════════
-
-                # ALERT 1: Nuevo lead
-                if es_nuevo_lead and not lead.alerta_vendedor_enviada:
-                    nombre = lead.nombre or msg.telefono
-                    await enviar_alerta_vendedor(
-                        "nuevo_lead",
-                        msg.telefono,
-                        f"{nombre} ({msg.telefono})\nDice: '{msg.texto[:80]}...'"
-                    )
-                    await marcar_alerta_vendedor(msg.telefono)
-
-                # ALERT 2: Lead pasó de warm/cold a hot
-                if (score_anterior < 50 or intencion_anterior != "hot") and lead.intencion == "hot":
-                    nombre = lead.nombre or msg.telefono
-                    await enviar_alerta_vendedor(
-                        "hot_lead",
-                        msg.telefono,
-                        f"{nombre} ({msg.telefono})\nScore: {lead.score}/100\nDice: '{msg.texto[:80]}...'"
-                    )
-
-                # Guardar respuesta limpia del agente (sin el marcador de imagen)
-                await guardar_mensaje(msg.telefono, "assistant", respuesta_limpia)
-
-                # Enviar respuesta de texto por WhatsApp
-                exito = await proveedor.enviar_mensaje(msg.telefono, respuesta_limpia)
-
-                if exito:
-                    logger.info(f"✓ Respuesta enviada a {msg.telefono}")
-                    logger.debug(f"   Respuesta: {respuesta_limpia[:100]}...")
-                else:
-                    logger.error(f"✗ Fallo al enviar respuesta a {msg.telefono}")
-
-                # Enviar imagen del producto si Claude la solicitó
-                if url_imagen_producto:
-                    await asyncio.sleep(1)  # Pequeño delay para que llegue después del texto
-                    exito_imagen = await enviar_imagen(msg.telefono, url_imagen_producto)
-                    if exito_imagen:
-                        logger.info(f"📸 Imagen de producto enviada a {msg.telefono} (product_id: {product_id})")
-                    else:
-                        logger.warning(f"⚠️ Error enviando imagen a {msg.telefono}")
-
-                # ═══════════════════════════════════════════════════════════
-                # LÓGICA DE PAGOS - Detectar métodos de pago
-                # ═══════════════════════════════════════════════════════════
-
-                metodo_pago = detectar_opcion_pago(respuesta_limpia)
-
-                if metodo_pago == "transferencia":
-                    # Enviar imagen de datos bancarios
-                    logger.info(f"💳 Cliente {msg.telefono} eligió TRANSFERENCIA - enviando datos bancarios")
-                    await enviar_imagen(msg.telefono, IMAGEN_DATOS_BANCARIOS)
-
-                # ═══════════════════════════════════════════════════════════
-                # LÓGICA DE CONFIRMACIÓN - Detectar confirmación de pago
-                # ═══════════════════════════════════════════════════════════
-
-                if detectar_confirmacion_pago(msg.texto):
-                    logger.info(f"✅ Cliente {msg.telefono} confirmó pago - intentando guardar pedido")
-
-                    # Obtener el último pedido en progreso
-                    ultimo_pedido = await obtener_ultimo_pedido(msg.telefono)
-
-                    if ultimo_pedido and ultimo_pedido.estado == "pendiente":
-                        # Actualizar estado a pagado
-                        await actualizar_estado_pedido(ultimo_pedido.id, "pagado")
-                        logger.info(f"💰 Pedido #{ultimo_pedido.id} marcado como PAGADO")
-
-                        # ALERT 3: Pago confirmado
-                        nombre = lead.nombre or msg.telefono
-                        await enviar_alerta_vendedor(
-                            "pago_confirmado",
-                            msg.telefono,
-                            f"{nombre} ({msg.telefono})\nProducto: {ultimo_pedido.producto}\nPrecio: {ultimo_pedido.precio} Gs"
-                        )
-
-                    else:
-                        logger.warning(f"⚠️ No hay pedido pendiente para {msg.telefono} - confirmación sin pedido en BD")
-
-            except Exception as e:
-                logger.error(f"✗ Error procesando mensaje de {msg.telefono}: {e}")
-                # Intentar enviar mensaje de error
-                try:
-                    await proveedor.enviar_mensaje(
-                        msg.telefono,
-                        "Lo siento, estoy teniendo problemas técnicos. Por favor intenta de nuevo en unos minutos."
-                    )
-                except Exception as send_error:
-                    logger.error(f"✗ No se pudo enviar mensaje de error: {send_error}")
+            PENDING_TASKS[msg.telefono] = asyncio.create_task(
+                _esperar_y_procesar(msg.telefono)
+            )
 
         return {"status": "ok"}
 
