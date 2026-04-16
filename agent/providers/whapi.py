@@ -61,6 +61,7 @@ class ProveedorWhapi(ProveedorWhatsApp):
         """
         try:
             body = await request.json()
+            logger.info(f"🔍 RAW WEBHOOK (primeros 500 chars): {str(body)[:500]}")
         except Exception as e:
             logger.error(f"❌ Error al parsear JSON de Whapi: {e}")
             return []
@@ -84,19 +85,26 @@ class ProveedorWhapi(ProveedorWhatsApp):
                     # Extraer referral de anuncio si existe (saludo automático de Meta Ads)
                     root_referral = msg.get("referral", {})
                     if root_referral:
-                        source_type = root_referral.get("source_type", "")
-                        source_id = root_referral.get("source_id", "").strip()
-                        headline = root_referral.get("headline", "").strip()
-                        ad_body = root_referral.get("body", "").strip()
+                        source_type = (root_referral.get("source_type") or "").strip()
+                        source_id = (root_referral.get("source_id") or "").strip()
+                        headline = (root_referral.get("headline") or "").strip()
+                        ad_body = (root_referral.get("body") or "").strip()
                         ad_headline = headline or ad_body
-                        body_url = root_referral.get("body_url", "").strip()
-                        if source_type == "ad" or source_id:
+                        body_url = (root_referral.get("body_url") or "").strip()
+                        if source_type.lower() == "ad" or source_id or headline or ad_body or body_url:
                             referral_ad = {
                                 "payload": source_id or None,
                                 "headline": ad_headline or None,
                                 "ad_url": body_url or None,
                             }
                             logger.info(f"📢 Referral en saludo automático: {referral_ad}")
+                    # Fallback: if from_me message looks like Meta's auto-greeting, treat as ad signal
+                    if not referral_ad and texto_propio in [
+                        "¡Hola! ¿Cómo podemos ayudarte?",
+                        "Hola! ¿Cómo podemos ayudarte?",
+                        "¡Hola! ¿Como podemos ayudarte?",
+                    ]:
+                        referral_ad = {"payload": None, "headline": None, "ad_url": None, "is_ad": True}
 
                 elif tipo == "image":
                     texto_propio = msg.get("image", {}).get("caption", "").strip() or "[Imagen]"
@@ -192,15 +200,15 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 # BUSCAR REFERRAL EN RAÍZ DEL MENSAJE (Meta Click-to-WhatsApp)
                 root_referral = msg.get("referral", {})
                 if root_referral:
-                    source_type = root_referral.get("source_type", "").strip()
-                    source_id = root_referral.get("source_id", "").strip()
-                    body_url = root_referral.get("body_url", "").strip()
-                    headline = root_referral.get("headline", "").strip()
+                    source_type = (root_referral.get("source_type") or "").strip()
+                    source_id = (root_referral.get("source_id") or "").strip()
+                    body_url = (root_referral.get("body_url") or "").strip()
+                    headline = (root_referral.get("headline") or "").strip()
+                    ad_body = (root_referral.get("body") or "").strip()
 
-                    if source_type == "ad" or source_id:
+                    if source_type.lower() == "ad" or source_id or headline or ad_body or body_url:
                         # Esto es un anuncio Meta
                         # Guardar headline — es la forma más confiable de saber qué producto es
-                        ad_body = root_referral.get("body", "").strip()
                         if headline or ad_body:
                             ad_headline = headline or ad_body
                             logger.info(f"🎯 Headline del anuncio: {ad_headline}")

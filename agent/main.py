@@ -625,7 +625,16 @@ async def _procesar_mensaje_individual(msg):
             if not producto_identificado:
                 producto_identificado = mapear_anuncio_a_producto(anuncio_info) if anuncio_info else None
 
-            tiene_contexto_real = bool(msg.anuncio_id or msg.payload or msg.contexto_anuncio)
+            tiene_contexto_real = bool(
+                msg.anuncio_id or
+                msg.payload or
+                (msg.contexto_anuncio and (
+                    msg.contexto_anuncio.get("payload") or
+                    msg.contexto_anuncio.get("headline") or
+                    msg.contexto_anuncio.get("ad_url") or
+                    msg.contexto_anuncio.get("is_ad")
+                ))
+            )
 
             # CAPA EXTRA: Si aún no identificamos el producto, buscarlo en el texto del mensaje
             if not producto_identificado:
@@ -839,6 +848,9 @@ async def webhook_handler(request: Request):
                 if msg.contexto_anuncio:
                     AD_CONTEXT_BY_PHONE[msg.telefono] = msg.contexto_anuncio
                     logger.info(f"📢 Contexto de anuncio guardado para {msg.telefono}: {msg.contexto_anuncio}")
+                elif msg.texto == "¡Hola! ¿Cómo podemos ayudarte?" or msg.texto == "[Saludo automático]":
+                    AD_CONTEXT_BY_PHONE[msg.telefono] = {"is_ad": True, "payload": None, "headline": None, "ad_url": None}
+                    logger.info(f"📢 Auto-greeting detectado, marcado como ad: {msg.telefono}")
 
                 # Distinguir ecos del bot vs mensajes manuales de Victor
                 _key = f"{msg.telefono}:{msg.texto[:80]}"
