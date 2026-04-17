@@ -53,11 +53,19 @@ async def job_seguimiento_mismo_dia():
             return
 
         for lead in leads:
-            mensaje = (
-                f"Hola {lead.nombre or 'che'}! Déjame preguntarte algo.\n\n"
-                f"¿Seguís interesado en los productos que te mostré?\n\n"
-                f"Si tenés dudas o querés conocer más, acá estoy para ayudarte 💪"
-            )
+            # Personalizar mensaje con el producto si se conoce
+            if lead.anuncio_producto:
+                mensaje = (
+                    f"Hola {lead.nombre or 'che'}! Seguís interesado/a en el {lead.anuncio_producto}?\n\n"
+                    f"Tenemos stock disponible y puedo ayudarte con precios y cuotas 💪\n\n"
+                    f"¿Qué necesitás saber?"
+                )
+            else:
+                mensaje = (
+                    f"Hola {lead.nombre or 'che'}! Déjame preguntarte algo.\n\n"
+                    f"¿Seguís interesado en los productos que te mostré?\n\n"
+                    f"Si tenés dudas o querés conocer más, acá estoy para ayudarte 💪"
+                )
 
             exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
             if exito:
@@ -81,11 +89,19 @@ async def job_seguimiento_1dia():
             return
 
         for lead in leads:
-            mensaje = (
-                f"Hola {lead.nombre or 'che'}! Volvimos a pensar en vos.\n\n"
-                f"¿Alguna duda con los productos? Seguimos aquí para ayudarte.\n\n"
-                f"Escribí cuando quieras 💙"
-            )
+            # Personalizar mensaje con el producto si se conoce
+            if lead.anuncio_producto:
+                mensaje = (
+                    f"Hola {lead.nombre or 'che'}! Volvimos a pensar en vos.\n\n"
+                    f"¿Llegaste a pensar en el {lead.anuncio_producto}? Seguimos con stock disponible.\n\n"
+                    f"Escribí cuando quieras 💙"
+                )
+            else:
+                mensaje = (
+                    f"Hola {lead.nombre or 'che'}! Volvimos a pensar en vos.\n\n"
+                    f"¿Alguna duda con los productos? Seguimos aquí para ayudarte.\n\n"
+                    f"Escribí cuando quieras 💙"
+                )
 
             exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
             if exito:
@@ -254,45 +270,33 @@ async def task_seguimientos_programados_loop():
 
 
 async def task_seguimiento_mismo_dia_loop():
-    """Ejecuta seguimiento mismo día a las 15:00 (3 PM)."""
+    """Ejecuta seguimiento mismo día cada 30 minutos."""
     while True:
         try:
-            ahora = datetime.now(TZ)
-            if ahora.hour == 15 and ahora.minute == 0:
-                await job_seguimiento_mismo_dia()
-                await asyncio.sleep(60)  # Esperar un minuto para no repetir
-            else:
-                await asyncio.sleep(30)
+            await job_seguimiento_mismo_dia()
         except Exception as e:
             logger.error(f"Error en loop de mismo día: {e}", exc_info=False)
+        await asyncio.sleep(1800)  # 30 minutos
 
 
 async def task_seguimiento_1dia_loop():
-    """Ejecuta seguimiento 1 día a las 10:00 AM."""
+    """Ejecuta seguimiento 1 día cada hora."""
     while True:
         try:
-            ahora = datetime.now(TZ)
-            if ahora.hour == 10 and ahora.minute == 0:
-                await job_seguimiento_1dia()
-                await asyncio.sleep(60)
-            else:
-                await asyncio.sleep(30)
+            await job_seguimiento_1dia()
         except Exception as e:
             logger.error(f"Error en loop de 1 día: {e}", exc_info=False)
+        await asyncio.sleep(3600)  # 1 hora
 
 
 async def task_seguimiento_3dias_loop():
-    """Ejecuta seguimiento 3 días a las 14:00 (2 PM)."""
+    """Ejecuta seguimiento 3 días cada 2 horas."""
     while True:
         try:
-            ahora = datetime.now(TZ)
-            if ahora.hour == 14 and ahora.minute == 0:
-                await job_seguimiento_3dias()
-                await asyncio.sleep(60)
-            else:
-                await asyncio.sleep(30)
+            await job_seguimiento_3dias()
         except Exception as e:
             logger.error(f"Error en loop de 3 días: {e}", exc_info=False)
+        await asyncio.sleep(7200)  # 2 horas
 
 
 async def task_promo_domingo_loop():

@@ -586,6 +586,27 @@ async def _procesar_mensaje_individual(msg):
             msg.anuncio_id = ad_ctx_almacenado.get("payload")
             logger.info(f"📢 Recuperado contexto de anuncio del saludo automático: {ad_ctx_almacenado}")
 
+        # Fallback: si no hay contexto de anuncio en memoria ni en el mensaje,
+        # pero el lead tiene un producto guardado desde un anuncio previo → usarlo
+        if not msg.contexto_anuncio and not ad_ctx_almacenado:
+            lead_actual = await obtener_lead(telefono)
+            if lead_actual and lead_actual.anuncio_producto:
+                msg.contexto_anuncio = {"headline": lead_actual.anuncio_producto, "payload": None, "ad_url": None}
+                logger.info(f"📢 Producto recuperado desde BD: {lead_actual.anuncio_producto}")
+
+        # Fallback extra: buscar en el historial de conversación el producto del anuncio
+        if not msg.contexto_anuncio and historial:
+            import re as _re
+            for msg_hist in historial:
+                hist_content = msg_hist.get("content", "") if isinstance(msg_hist, dict) else getattr(msg_hist, "content", "")
+                if hist_content:
+                    match = _re.search(r'\[CLIENTE VIENE DE ANUNCIO DE: ([^\]]+)\]', hist_content)
+                    if match:
+                        producto_del_historial = match.group(1).strip()
+                        msg.contexto_anuncio = {"headline": producto_del_historial, "payload": None, "ad_url": None}
+                        logger.info(f"📢 Producto recuperado del historial: {producto_del_historial}")
+                        break
+
         # ── INSTRUCCIÓN DE HISTORIAL (cuando hay conversación previa) ────
         if historial:
             contexto_sistema.append(
@@ -661,6 +682,11 @@ async def _procesar_mensaje_individual(msg):
                 contexto_sistema.append(f"✅ Respondé DIRECTAMENTE con info completa sobre: {nombre_producto}")
                 contexto_sistema.append(f"✅ Incluí: precio, stock actual, beneficios principales y link de compra.")
                 mensaje_contextualizado = f"[CLIENTE VIENE DE ANUNCIO DE: {nombre_producto}] {msg.texto}"
+
+                # Guardar producto en BD para que sobreviva deploys y lo use el scheduler
+                if producto_identificado:
+                    from agent.memory import guardar_anuncio_producto
+                    await guardar_anuncio_producto(telefono, producto_identificado)
 
         # CASO 1.5: Cliente nuevo menciona un producto en su mensaje (sin ser detectado como "anuncio")
         # Esto cubre el caso: "Escribo por la promo de la bota therabody"

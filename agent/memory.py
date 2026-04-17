@@ -145,6 +145,7 @@ class Lead(Base):
     seguimiento_1dia_enviado: Mapped[bool] = mapped_column(default=False, nullable=False)
     seguimiento_3dias_enviado: Mapped[bool] = mapped_column(default=False, nullable=False)
     en_manos_humanas: Mapped[bool] = mapped_column(default=False, nullable=False)
+    anuncio_producto: Mapped[str] = mapped_column(String(200), nullable=True)  # Producto identificado desde anuncio Meta
 
     # Lead Scoring
     score: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
@@ -326,6 +327,17 @@ async def ejecutar_migraciones():
         except Exception as e:
             logger.warning(f"⚠️ Error en migración de seguimiento_mismo_dia_enviado: {e}")
             # Si es SQLite, el error es diferente — ignorar
+
+        # Migración: Agregar columna anuncio_producto si no existe
+        # Usa ALTER TABLE directo — funciona en SQLite y PostgreSQL
+        # (falla silenciosamente si la columna ya existe)
+        try:
+            await conn.execute(
+                text("ALTER TABLE leads ADD COLUMN anuncio_producto VARCHAR(200) NULL")
+            )
+            logger.info("✓ Columna anuncio_producto agregada correctamente")
+        except Exception:
+            pass  # Columna ya existe — normal en deploys subsecuentes
 
 
 async def inicializar_db():
@@ -872,14 +884,15 @@ async def registrar_lead(telefono: str, nombre: str = "") -> Lead:
 
 
 async def obtener_leads_sin_respuesta_1dia() -> list[Lead]:
-    """Obtiene leads que contactaron hace 1 día y no respondieron."""
+    """Obtiene leads que no respondieron en 18 a 48 horas después del contacto."""
     async with async_session() as session:
-        hace_1_dia = datetime.utcnow() - __import__('datetime').timedelta(days=1)
+        hace_18h = datetime.utcnow() - timedelta(hours=18)
+        hace_48h = datetime.utcnow() - timedelta(hours=48)
 
         query = (
             select(Lead)
-            .where(Lead.ultimo_mensaje <= hace_1_dia)
-            .where(Lead.ultimo_mensaje > hace_1_dia - __import__('datetime').timedelta(hours=2))
+            .where(Lead.ultimo_mensaje <= hace_18h)
+            .where(Lead.ultimo_mensaje >= hace_48h)
             .where(Lead.seguimiento_1dia_enviado == False)
             .where(Lead.fue_cliente == False)
         )
@@ -888,14 +901,15 @@ async def obtener_leads_sin_respuesta_1dia() -> list[Lead]:
 
 
 async def obtener_leads_sin_respuesta_3dias() -> list[Lead]:
-    """Obtiene leads que contactaron hace 3 días y no respondieron."""
+    """Obtiene leads que no respondieron en 60 a 120 horas después del contacto."""
     async with async_session() as session:
-        hace_3_dias = datetime.utcnow() - __import__('datetime').timedelta(days=3)
+        hace_60h = datetime.utcnow() - timedelta(hours=60)
+        hace_120h = datetime.utcnow() - timedelta(hours=120)
 
         query = (
             select(Lead)
-            .where(Lead.ultimo_mensaje <= hace_3_dias)
-            .where(Lead.ultimo_mensaje > hace_3_dias - __import__('datetime').timedelta(hours=2))
+            .where(Lead.ultimo_mensaje <= hace_60h)
+            .where(Lead.ultimo_mensaje >= hace_120h)
             .where(Lead.seguimiento_3dias_enviado == False)
             .where(Lead.fue_cliente == False)
         )
@@ -1519,17 +1533,17 @@ async def marcar_encuesta_enviada(pedido_id: int):
 
 async def obtener_leads_sin_respuesta_mismo_dia() -> list[Lead]:
     """
-    Obtiene leads que fueron contactados hoy hace 3+ horas y no respondieron.
-    Se envía seguimiento mismo día para reactivar la conversación.
+    Obtiene leads contactados hace 3 a 48 horas que no respondieron.
+    Se envía el primer seguimiento de reactivación.
     """
     async with async_session() as session:
         hace_3h = datetime.utcnow() - timedelta(hours=3)
-        hoy_00h = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        hace_48h = datetime.utcnow() - timedelta(hours=48)
 
         query = (
             select(Lead)
-            .where(Lead.primer_contacto >= hoy_00h)  # Contactados hoy
-            .where(Lead.primer_contacto <= hace_3h)   # Hace 3+ horas
+            .where(Lead.primer_contacto <= hace_3h)   # al menos 3 horas desde contacto
+            .where(Lead.primer_contacto >= hace_48h)  # no más de 48 horas
             .where(Lead.seguimiento_mismo_dia_enviado == False)  # No se envió aún
             .where(Lead.fue_cliente == False)  # No son clientes (todavía)
             .order_by(Lead.primer_contacto)
@@ -1547,6 +1561,18 @@ async def marcar_seguimiento_mismo_dia(telefono: str):
         if lead:
             lead.seguimiento_mismo_dia_enviado = True
             await session.commit()
+
+
+async def guardar_anuncio_producto(telefono: str, producto: str):
+    """Guarda el producto identificado desde anuncio Meta en la BD."""
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+        if lead and not lead.anuncio_producto:  # Solo si no tiene ya un producto guardado
+            lead.anuncio_producto = producto
+            await session.commit()
+            logger.info(f"✓ Anuncio producto guardado: {telefono} → {producto}")
 
 
 # ════════════════════════════════════════════════════════════
