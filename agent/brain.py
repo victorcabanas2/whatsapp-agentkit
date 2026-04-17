@@ -633,6 +633,116 @@ def extraer_imagen_de_respuesta(respuesta: str) -> tuple[str, str | None]:
     return respuesta, None
 
 
+async def generar_mensaje_seguimiento_contextual(
+    lead,
+    historial: list[dict],
+    tipo_seguimiento: str = "seguimiento"
+) -> str | None:
+    """
+    Lee el historial de conversación y genera un follow-up personalizado con IA.
+
+    Analiza el contexto real de la conversación para decidir:
+    - SI enviar (hay oportunidad de venta pendiente)
+    - QUÉ decir (referenciando lo que realmente se habló)
+
+    Returns:
+        str — mensaje personalizado a enviar
+        None — NO enviar (cliente en lista de espera, ya resolvió, dijo que no, etc.)
+    """
+    import json
+
+    if not historial and not lead.anuncio_producto:
+        return None
+
+    historial_texto = ""
+    for msg in historial[-20:]:
+        rol = "Cliente" if msg["role"] == "user" else "Belén (bot)"
+        historial_texto += f"{rol}: {msg['content']}\n\n"
+
+    if not historial_texto:
+        historial_texto = "(Sin mensajes previos registrados en el sistema)"
+
+    descripciones_tipo = {
+        "mismo_dia": "primer seguimiento (3-48hs después del contacto inicial)",
+        "1dia": "segundo seguimiento (día siguiente sin respuesta del cliente)",
+        "3dias": "tercer contacto (3 días sin respuesta)",
+        "domingo": "seguimiento dominical especial",
+        "pendiente": "recuperar conversación que nunca recibió seguimiento",
+    }
+    desc_tipo = descripciones_tipo.get(tipo_seguimiento, tipo_seguimiento)
+
+    user_content = f"""Analiza esta conversación de ventas y decide si enviar un mensaje de seguimiento.
+
+TIPO: {desc_tipo}
+CLIENTE: {lead.nombre or "Sin nombre"} | PRODUCTO ANUNCIO: {lead.anuncio_producto or "No identificado"}
+
+CONVERSACIÓN:
+{historial_texto}
+
+Responde SOLO con JSON válido (sin bloques de código, sin texto extra):
+Si SÍ: {{"enviar": true, "razon": "motivo breve", "mensaje": "texto del mensaje"}}
+Si NO: {{"enviar": false, "razon": "motivo breve", "mensaje": null}}
+
+══════════════════════════════════════════════════
+REGLA PRINCIPAL — ¿Se estableció una acción concreta entre las partes?
+
+NO ENVIAR si cualquiera de estos aplica:
+• Nosotros prometimos contactarlos: lista de espera, avisar cuando llegue stock, consultar y volver a escribir
+• El cliente dijo que él/ella nos avisa cuando decida ("te aviso", "yo te escribo", "te contacto")
+• El cliente dijo explícitamente que no quiere comprar o no le interesa
+• El cliente ya compró
+
+SÍ ENVIAR si ninguno de los anteriores aplica:
+• No respondió nada desde el primer mensaje
+• Respuesta vaga: "gracias", "voy a revisar", "lo pienso", "quizás", "después veo"
+• Mostró interés, preguntó precio/stock, pero nunca tomó ninguna acción concreta
+══════════════════════════════════════════════════
+
+REGLAS DEL MENSAJE (solo si enviar=true):
+- SIEMPRE empezar con: "Hola, ¿qué tal?" seguido del mensaje
+- Menciona el PRODUCTO O TEMA EXACTO que se habló (nunca genérico)
+- Máximo 3 oraciones, una sola pregunta o CTA al final
+- Tono cálido, no presionante
+- Español paraguayo (tuteo), sin "che" """
+
+    try:
+        response = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=400,
+            system="Eres un analizador de conversaciones de ventas. Responde SOLO con JSON válido, sin explicaciones, sin bloques de código.",
+            messages=[{"role": "user", "content": user_content}]
+        )
+
+        texto = response.content[0].text.strip()
+
+        # Limpiar posibles wrappers de bloque de código
+        if "```" in texto:
+            start = texto.find("{")
+            end = texto.rfind("}") + 1
+            if start >= 0 and end > start:
+                texto = texto[start:end]
+
+        data = json.loads(texto)
+
+        if not data.get("enviar", False):
+            logger.info(f"🚫 Seguimiento omitido [{tipo_seguimiento}] para {lead.telefono}: {data.get('razon', 'sin razón')}")
+            return None
+
+        mensaje = data.get("mensaje")
+        if mensaje:
+            logger.info(f"✅ Seguimiento contextual generado [{tipo_seguimiento}] para {lead.telefono}: {data.get('razon', '')}")
+            return str(mensaje)
+
+        return None
+
+    except json.JSONDecodeError as e:
+        logger.warning(f"⚠️ JSON inválido en seguimiento contextual para {lead.telefono}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ Error generando seguimiento contextual para {lead.telefono}: {e}")
+        return None
+
+
 def obtener_url_imagen(product_id: str) -> str | None:
     """
     Obtiene la URL de imagen de un producto desde el catálogo local.

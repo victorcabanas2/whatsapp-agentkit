@@ -35,7 +35,10 @@ from agent.memory import (
     marcar_encuesta_enviada,
     obtener_seguimientos_programados,
     marcar_seguimiento_programado_enviado,
+    obtener_historial,
+    obtener_leads_sin_ningun_seguimiento,
 )
+from agent.brain import generar_mensaje_seguimiento_contextual
 from agent.providers import obtener_proveedor
 
 logger = logging.getLogger("agentkit.scheduler")
@@ -48,104 +51,105 @@ TZ = pytz.timezone('America/Asuncion')
 # ════════════════════════════════════════════════════════════════
 
 async def job_seguimiento_mismo_dia():
-    """Envía recordatorio a leads el MISMO DÍA de contacto inicial (después de 3 horas)."""
+    """Seguimiento contextual el mismo día de contacto (3-72hs). Lee historial con Claude."""
     try:
         logger.info("📅 Ejecutando: Seguimiento MISMO DÍA")
         leads = await obtener_leads_sin_respuesta_mismo_dia()
-
         if not leads:
             logger.debug("No hay leads con seguimiento mismo día pendiente")
             return
-
+        logger.info(f"📋 {len(leads)} leads candidatos para seguimiento mismo día")
         for lead in leads:
-            # Personalizar mensaje con el producto si se conoce
-            if lead.anuncio_producto:
-                mensaje = (
-                    f"Hola {lead.nombre or 'che'}! Seguís interesado/a en el {lead.anuncio_producto}?\n\n"
-                    f"Tenemos stock disponible y puedo ayudarte con precios y cuotas 💪\n\n"
-                    f"¿Qué necesitás saber?"
-                )
-            else:
-                mensaje = (
-                    f"Hola {lead.nombre or 'che'}! Déjame preguntarte algo.\n\n"
-                    f"¿Seguís interesado en los productos que te mostré?\n\n"
-                    f"Si tenés dudas o querés conocer más, acá estoy para ayudarte 💪"
-                )
-
+            historial = await obtener_historial(lead.telefono, limite=20)
+            mensaje = await generar_mensaje_seguimiento_contextual(lead, historial, "mismo_dia")
+            await marcar_seguimiento_mismo_dia(lead.telefono)
+            if mensaje is None:
+                logger.info(f"🚫 Seguimiento mismo día omitido → {lead.telefono}")
+                continue
             exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
             if exito:
-                await marcar_seguimiento_mismo_dia(lead.telefono)
-                logger.info(f"✓ Seguimiento mismo día enviado a {lead.telefono}")
+                logger.info(f"✓ Seguimiento mismo día enviado → {lead.telefono}")
             else:
-                logger.error(f"✗ Fallo envío a {lead.telefono}")
-
+                logger.error(f"✗ Fallo envío → {lead.telefono}")
     except Exception as e:
         logger.error(f"Error en job_seguimiento_mismo_dia: {e}", exc_info=False)
 
 
 async def job_seguimiento_1dia():
-    """Envía recordatorio a leads que no respondieron en 1 día después de contacto."""
+    """Seguimiento contextual al día siguiente. Lee historial con Claude."""
     try:
         logger.info("📅 Ejecutando: Seguimiento 1 día")
         leads = await obtener_leads_sin_respuesta_1dia()
-
         if not leads:
             logger.debug("No hay leads con seguimiento 1 día pendiente")
             return
-
+        logger.info(f"📋 {len(leads)} leads candidatos para seguimiento 1 día")
         for lead in leads:
-            # Personalizar mensaje con el producto si se conoce
-            if lead.anuncio_producto:
-                mensaje = (
-                    f"Hola {lead.nombre or 'che'}! Volvimos a pensar en vos.\n\n"
-                    f"¿Llegaste a pensar en el {lead.anuncio_producto}? Seguimos con stock disponible.\n\n"
-                    f"Escribí cuando quieras 💙"
-                )
-            else:
-                mensaje = (
-                    f"Hola {lead.nombre or 'che'}! Volvimos a pensar en vos.\n\n"
-                    f"¿Alguna duda con los productos? Seguimos aquí para ayudarte.\n\n"
-                    f"Escribí cuando quieras 💙"
-                )
-
+            historial = await obtener_historial(lead.telefono, limite=20)
+            mensaje = await generar_mensaje_seguimiento_contextual(lead, historial, "1dia")
+            await marcar_seguimiento_1dia(lead.telefono)
+            if mensaje is None:
+                logger.info(f"🚫 Seguimiento 1día omitido → {lead.telefono}")
+                continue
             exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
             if exito:
-                await marcar_seguimiento_1dia(lead.telefono)
-                logger.info(f"✓ Seguimiento 1día enviado a {lead.telefono}")
+                logger.info(f"✓ Seguimiento 1día enviado → {lead.telefono}")
             else:
-                logger.error(f"✗ Fallo envío a {lead.telefono}")
-
+                logger.error(f"✗ Fallo envío → {lead.telefono}")
     except Exception as e:
         logger.error(f"Error en job_seguimiento_1dia: {e}", exc_info=False)
 
 
 async def job_seguimiento_3dias():
-    """Envía recordatorio a leads que no respondieron en 3 días después de contacto."""
+    """Seguimiento contextual a los 3 días. Lee historial con Claude."""
     try:
         logger.info("📅 Ejecutando: Seguimiento 3 días")
         leads = await obtener_leads_sin_respuesta_3dias()
-
         if not leads:
             logger.debug("No hay leads con seguimiento 3 días pendiente")
             return
-
+        logger.info(f"📋 {len(leads)} leads candidatos para seguimiento 3 días")
         for lead in leads:
-            mensaje = (
-                f"Hola de nuevo! No queremos que te pierdas estos productos.\n\n"
-                f"Si tenés dudas específicas o necesitás algo especial, contáctate con nuestro equipo comercial:\n\n"
-                f"+595 993 233333\n\n"
-                f"Estamos acá para ayudarte 🚀"
-            )
-
+            historial = await obtener_historial(lead.telefono, limite=20)
+            mensaje = await generar_mensaje_seguimiento_contextual(lead, historial, "3dias")
+            await marcar_seguimiento_3dias(lead.telefono)
+            if mensaje is None:
+                logger.info(f"🚫 Seguimiento 3días omitido → {lead.telefono}")
+                continue
             exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
             if exito:
-                await marcar_seguimiento_3dias(lead.telefono)
-                logger.info(f"✓ Seguimiento 3días enviado a {lead.telefono}")
+                logger.info(f"✓ Seguimiento 3días enviado → {lead.telefono}")
             else:
-                logger.error(f"✗ Fallo envío a {lead.telefono}")
-
+                logger.error(f"✗ Fallo envío → {lead.telefono}")
     except Exception as e:
         logger.error(f"Error en job_seguimiento_3dias: {e}", exc_info=False)
+
+
+async def job_seguimiento_pendientes():
+    """
+    Catch-all: recupera leads que NUNCA recibieron seguimiento por reinicios de servidor.
+    Los 87 leads caídos en el gap entran aquí. Corre cada hora.
+    """
+    try:
+        leads = await obtener_leads_sin_ningun_seguimiento()
+        if not leads:
+            return
+        logger.info(f"🔄 Recuperando {len(leads)} leads sin ningún seguimiento previo")
+        for lead in leads:
+            historial = await obtener_historial(lead.telefono, limite=20)
+            mensaje = await generar_mensaje_seguimiento_contextual(lead, historial, "pendiente")
+            # Marcar mismo_dia para moverlos a la cadena normal
+            await marcar_seguimiento_mismo_dia(lead.telefono)
+            if mensaje is None:
+                logger.info(f"🚫 Lead pendiente omitido → {lead.telefono}")
+                continue
+            exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
+            if exito:
+                logger.info(f"✓ Seguimiento pendiente enviado → {lead.telefono}")
+            else:
+                logger.error(f"✗ Fallo envío pendiente → {lead.telefono}")
+    except Exception as e:
+        logger.error(f"Error en job_seguimiento_pendientes: {e}", exc_info=False)
 
 
 async def job_promo_domingo():
@@ -192,31 +196,25 @@ async def job_promo_domingo():
 
 
 async def job_seguimiento_domingo():
-    """Seguimiento dominical: todos los que no respondieron ningún seguimiento."""
+    """Seguimiento dominical contextual con Claude."""
     try:
         logger.info("📅 Ejecutando: Seguimiento DOMINGO")
         leads = await obtener_leads_para_seguimiento_domingo()
         if not leads:
             logger.debug("No hay leads para seguimiento dominical")
             return
+        logger.info(f"📋 {len(leads)} leads candidatos para seguimiento domingo")
         for lead in leads:
-            if lead.anuncio_producto:
-                mensaje = (
-                    f"Hola {lead.nombre or 'che'}! Dominguito especial en Rebody 🌟\n\n"
-                    f"¿Seguís pensando en el {lead.anuncio_producto}?\n\n"
-                    f"Esta semana tenemos stock disponible. ¿Te ayudo con algo?"
-                )
-            else:
-                mensaje = (
-                    f"Hola {lead.nombre or 'che'}! Dominguito especial en Rebody 🌟\n\n"
-                    f"¿Seguís interesado en nuestros productos?\n\n"
-                    f"Acá estoy para ayudarte cuando quieras 😊"
-                )
+            historial = await obtener_historial(lead.telefono, limite=20)
+            mensaje = await generar_mensaje_seguimiento_contextual(lead, historial, "domingo")
+            if mensaje is None:
+                logger.info(f"🚫 Seguimiento domingo omitido → {lead.telefono}")
+                continue
             exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
             if exito:
-                logger.info(f"✓ Seguimiento domingo enviado a {lead.telefono}")
+                logger.info(f"✓ Seguimiento domingo enviado → {lead.telefono}")
             else:
-                logger.error(f"✗ Fallo envío domingo a {lead.telefono}")
+                logger.error(f"✗ Fallo envío domingo → {lead.telefono}")
     except Exception as e:
         logger.error(f"Error en job_seguimiento_domingo: {e}", exc_info=False)
 
@@ -270,7 +268,7 @@ async def job_seguimientos_programados():
         for seg in seguimientos:
             try:
                 mensaje = seg.mensaje_personalizado or (
-                    f"Hola {seg.nombre or 'che'}! 👋\n\n"
+                    f"Hola{', ' + seg.nombre if seg.nombre else ''}! 👋\n\n"
                     f"Como te lo prometí, acá estoy.\n\n"
                     f"¿Qué te puedo ayudar?"
                 )
@@ -302,6 +300,16 @@ async def task_seguimientos_programados_loop():
             logger.error(f"Error en loop de seguimientos: {e}", exc_info=False)
 
         await asyncio.sleep(30)
+
+
+async def task_seguimiento_pendientes_loop():
+    """Catch-all: corre cada hora para recuperar leads que cayeron fuera de la ventana de tiempo."""
+    while True:
+        try:
+            await job_seguimiento_pendientes()
+        except Exception as e:
+            logger.error(f"Error en loop pendientes: {e}", exc_info=False)
+        await asyncio.sleep(3600)  # 1 hora
 
 
 async def task_seguimiento_mismo_dia_loop():
@@ -373,6 +381,7 @@ def crear_background_tasks() -> list:
     """Retorna lista de tasks para crear en FastAPI lifespan."""
     return [
         asyncio.create_task(task_seguimientos_programados_loop()),
+        asyncio.create_task(task_seguimiento_pendientes_loop()),
         asyncio.create_task(task_seguimiento_mismo_dia_loop()),
         asyncio.create_task(task_seguimiento_15h_loop()),
         asyncio.create_task(task_promo_domingo_loop()),

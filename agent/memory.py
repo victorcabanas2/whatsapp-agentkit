@@ -1022,6 +1022,31 @@ obtener_leads_sin_respuesta_1dia = obtener_leads_para_seguimiento_2
 obtener_leads_sin_respuesta_3dias = obtener_leads_para_seguimiento_3
 
 
+async def obtener_leads_sin_ningun_seguimiento() -> list[Lead]:
+    """
+    Leads que NUNCA recibieron ningún seguimiento y llevan > 3 horas sin contacto.
+
+    Captura todos los leads que cayeron fuera de las ventanas de tiempo normales
+    (ej: cuando Railway se reinicia y los leads superan las 72 horas sin seguimiento).
+    Sin límite superior de tiempo — recupera todos los leads perdidos.
+    """
+    async with async_session() as session:
+        hace_3h = datetime.utcnow() - timedelta(hours=3)
+        query = (
+            select(Lead)
+            .where(Lead.seguimiento_mismo_dia_enviado == False)
+            .where(Lead.seguimiento_1dia_enviado == False)
+            .where(Lead.seguimiento_3dias_enviado == False)
+            .where(Lead.fue_cliente == False)
+            .where(Lead.desistido == False)
+            .where(Lead.en_manos_humanas == False)
+            .where(Lead.primer_contacto <= hace_3h)
+            .order_by(Lead.primer_contacto.asc())
+        )
+        result = await session.execute(query)
+        return list(result.scalars().all())
+
+
 async def actualizar_ultimo_mensaje_usuario(telefono: str):
     """Actualiza el timestamp del último mensaje del cliente (no del bot)."""
     async with async_session() as session:
