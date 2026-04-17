@@ -564,6 +564,10 @@ async def _procesar_mensaje_individual(msg):
         lead = await registrar_lead(telefono)
         es_nuevo_lead = (datetime.utcnow() - lead.primer_contacto).total_seconds() < 60
 
+        # Registrar que el cliente escribió (para tracking de respuestas a seguimientos)
+        from agent.memory import actualizar_ultimo_mensaje_usuario
+        await actualizar_ultimo_mensaje_usuario(telefono)
+
         # Historial
         historial = await obtener_historial(telefono, limite=100)
         logger.info(f"✓ Historial cargado: {len(historial)} mensajes")
@@ -754,6 +758,19 @@ async def _procesar_mensaje_individual(msg):
         intencion_anterior = lead.intencion
         await calcular_lead_score(telefono, msg.texto, lead)
         lead = await obtener_lead(telefono)
+
+        # ── DETECTAR DESISTIDO ───────────────────────────────
+        PATRONES_DESISTIDO = [
+            "no me interesa", "no gracias", "no quiero", "no necesito",
+            "no voy a comprar", "ya no", "paso", "dejame", "descartá",
+            "no lo necesito", "no por ahora", "por favor no me escribas",
+            "no molestar", "bloqueá", "borrá mi número"
+        ]
+        texto_lower = msg.texto.lower()
+        if any(patron in texto_lower for patron in PATRONES_DESISTIDO):
+            from agent.memory import marcar_desistido
+            await marcar_desistido(telefono)
+            logger.info(f"✗ Cliente marcó como desistido: {telefono}")
 
         # ── ALERTAS AL VENDEDOR ─────────────────────────────
         if es_nuevo_lead and not lead.alerta_vendedor_enviada:

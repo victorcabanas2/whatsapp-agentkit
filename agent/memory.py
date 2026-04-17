@@ -147,6 +147,12 @@ class Lead(Base):
     en_manos_humanas: Mapped[bool] = mapped_column(default=False, nullable=False)
     anuncio_producto: Mapped[str] = mapped_column(String(200), nullable=True)  # Producto identificado desde anuncio Meta
 
+    # Seguimiento avanzado
+    desistido: Mapped[bool] = mapped_column(default=False, nullable=False)
+    ultimo_mensaje_usuario: Mapped[datetime] = mapped_column(DateTime, nullable=True)  # Solo mensajes del cliente
+    fecha_seguimiento_mismo_dia: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    fecha_seguimiento_1dia: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
     # Lead Scoring
     score: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
     intencion: Mapped[str] = mapped_column(String(10), default="cold", nullable=False)
@@ -338,6 +344,30 @@ async def ejecutar_migraciones():
             logger.info("✓ Columna anuncio_producto agregada correctamente")
         except Exception:
             pass  # Columna ya existe — normal en deploys subsecuentes
+
+        try:
+            await conn.execute(text("ALTER TABLE leads ADD COLUMN desistido BOOLEAN DEFAULT FALSE NOT NULL"))
+            logger.info("✓ Columna desistido agregada")
+        except Exception:
+            pass
+
+        try:
+            await conn.execute(text("ALTER TABLE leads ADD COLUMN ultimo_mensaje_usuario TIMESTAMP NULL"))
+            logger.info("✓ Columna ultimo_mensaje_usuario agregada")
+        except Exception:
+            pass
+
+        try:
+            await conn.execute(text("ALTER TABLE leads ADD COLUMN fecha_seguimiento_mismo_dia TIMESTAMP NULL"))
+            logger.info("✓ Columna fecha_seguimiento_mismo_dia agregada")
+        except Exception:
+            pass
+
+        try:
+            await conn.execute(text("ALTER TABLE leads ADD COLUMN fecha_seguimiento_1dia TIMESTAMP NULL"))
+            logger.info("✓ Columna fecha_seguimiento_1dia agregada")
+        except Exception:
+            pass
 
 
 async def inicializar_db():
@@ -883,38 +913,136 @@ async def registrar_lead(telefono: str, nombre: str = "") -> Lead:
             raise AgentKitError(f"Error al registrar lead: {e}")
 
 
-async def obtener_leads_sin_respuesta_1dia() -> list[Lead]:
-    """Obtiene leads que no respondieron en 18 a 48 horas después del contacto."""
+async def obtener_leads_para_seguimiento_1() -> list[Lead]:
+    """Leads para seguimiento 1: todos los leads activos 3+ horas después del primer contacto."""
     async with async_session() as session:
-        hace_18h = datetime.utcnow() - timedelta(hours=18)
-        hace_48h = datetime.utcnow() - timedelta(hours=48)
-
+        hace_3h = datetime.utcnow() - timedelta(hours=3)
+        hace_72h = datetime.utcnow() - timedelta(hours=72)  # ventana amplia
         query = (
             select(Lead)
-            .where(Lead.ultimo_mensaje <= hace_18h)
-            .where(Lead.ultimo_mensaje >= hace_48h)
+            .where(Lead.primer_contacto <= hace_3h)
+            .where(Lead.primer_contacto >= hace_72h)
+            .where(Lead.seguimiento_mismo_dia_enviado == False)
+            .where(Lead.fue_cliente == False)
+            .where(Lead.desistido == False)
+            .where(Lead.en_manos_humanas == False)
+            .order_by(Lead.primer_contacto)
+        )
+        result = await session.execute(query)
+        return result.scalars().all()
+
+
+async def obtener_leads_para_seguimiento_2() -> list[Lead]:
+    """
+    Leads para seguimiento 2 (día siguiente 15:00):
+    - Recibieron seguimiento 1
+    - NO respondieron desde entonces (ultimo_mensaje_usuario no avanzó)
+    - Seguimiento 2 aún no enviado
+    """
+    async with async_session() as session:
+        hace_20h = datetime.utcnow() - timedelta(hours=20)
+        hace_96h = datetime.utcnow() - timedelta(hours=96)
+        query = (
+            select(Lead)
+            .where(Lead.seguimiento_mismo_dia_enviado == True)
             .where(Lead.seguimiento_1dia_enviado == False)
             .where(Lead.fue_cliente == False)
+            .where(Lead.desistido == False)
+            .where(Lead.en_manos_humanas == False)
+            .where(Lead.primer_contacto <= hace_20h)
+            .where(Lead.primer_contacto >= hace_96h)
+            # No respondieron: ultimo_mensaje_usuario es null o igual a primer_contacto
+            # (solo escribieron el mensaje inicial, no respondieron al bot)
+            .where(
+                (Lead.ultimo_mensaje_usuario == None) |
+                (Lead.ultimo_mensaje_usuario <= Lead.primer_contacto + timedelta(minutes=30))
+            )
         )
         result = await session.execute(query)
         return result.scalars().all()
 
 
-async def obtener_leads_sin_respuesta_3dias() -> list[Lead]:
-    """Obtiene leads que no respondieron en 60 a 120 horas después del contacto."""
+async def obtener_leads_para_seguimiento_3() -> list[Lead]:
+    """
+    Leads para seguimiento 3 (día 3, 15:00):
+    - Recibieron al menos seguimiento 1
+    - NO respondieron a ningún seguimiento
+    - Seguimiento 3 aún no enviado
+    - Han pasado 3+ días desde primer contacto
+    """
     async with async_session() as session:
-        hace_60h = datetime.utcnow() - timedelta(hours=60)
-        hace_120h = datetime.utcnow() - timedelta(hours=120)
-
+        hace_3dias = datetime.utcnow() - timedelta(days=3)
+        hace_10dias = datetime.utcnow() - timedelta(days=10)
         query = (
             select(Lead)
-            .where(Lead.ultimo_mensaje <= hace_60h)
-            .where(Lead.ultimo_mensaje >= hace_120h)
+            .where(Lead.seguimiento_mismo_dia_enviado == True)
             .where(Lead.seguimiento_3dias_enviado == False)
             .where(Lead.fue_cliente == False)
+            .where(Lead.desistido == False)
+            .where(Lead.en_manos_humanas == False)
+            .where(Lead.primer_contacto <= hace_3dias)
+            .where(Lead.primer_contacto >= hace_10dias)
+            .where(
+                (Lead.ultimo_mensaje_usuario == None) |
+                (Lead.ultimo_mensaje_usuario <= Lead.primer_contacto + timedelta(minutes=30))
+            )
         )
         result = await session.execute(query)
         return result.scalars().all()
+
+
+async def obtener_leads_para_seguimiento_domingo() -> list[Lead]:
+    """
+    Leads para seguimiento dominical (todos los domingos 14:00):
+    - Recibieron al menos 1 seguimiento
+    - Nunca respondieron
+    - No desistidos, no clientes
+    """
+    async with async_session() as session:
+        hace_7dias = datetime.utcnow() - timedelta(days=7)  # No más de 7 días
+        query = (
+            select(Lead)
+            .where(Lead.seguimiento_mismo_dia_enviado == True)
+            .where(Lead.fue_cliente == False)
+            .where(Lead.desistido == False)
+            .where(Lead.en_manos_humanas == False)
+            .where(Lead.primer_contacto >= hace_7dias)
+            .where(
+                (Lead.ultimo_mensaje_usuario == None) |
+                (Lead.ultimo_mensaje_usuario <= Lead.primer_contacto + timedelta(minutes=30))
+            )
+        )
+        result = await session.execute(query)
+        return result.scalars().all()
+
+
+# Aliases para compatibilidad con código existente
+obtener_leads_sin_respuesta_mismo_dia = obtener_leads_para_seguimiento_1
+obtener_leads_sin_respuesta_1dia = obtener_leads_para_seguimiento_2
+obtener_leads_sin_respuesta_3dias = obtener_leads_para_seguimiento_3
+
+
+async def actualizar_ultimo_mensaje_usuario(telefono: str):
+    """Actualiza el timestamp del último mensaje del cliente (no del bot)."""
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+        if lead:
+            lead.ultimo_mensaje_usuario = datetime.utcnow()
+            await session.commit()
+
+
+async def marcar_desistido(telefono: str):
+    """Marca que el cliente explícitamente rechazó — para todos los seguimientos."""
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+        if lead:
+            lead.desistido = True
+            await session.commit()
+            logger.info(f"✗ Lead marcado como desistido: {telefono}")
 
 
 async def marcar_seguimiento_1dia(telefono: str):
@@ -925,6 +1053,7 @@ async def marcar_seguimiento_1dia(telefono: str):
         lead = result.scalar_one_or_none()
         if lead:
             lead.seguimiento_1dia_enviado = True
+            lead.fecha_seguimiento_1dia = datetime.utcnow()
             await session.commit()
 
 
@@ -1560,6 +1689,7 @@ async def marcar_seguimiento_mismo_dia(telefono: str):
         lead = result.scalar_one_or_none()
         if lead:
             lead.seguimiento_mismo_dia_enviado = True
+            lead.fecha_seguimiento_mismo_dia = datetime.utcnow()
             await session.commit()
 
 

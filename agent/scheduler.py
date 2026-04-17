@@ -18,6 +18,11 @@ from datetime import datetime
 import pytz
 
 from agent.memory import (
+    obtener_leads_para_seguimiento_1,
+    obtener_leads_para_seguimiento_2,
+    obtener_leads_para_seguimiento_3,
+    obtener_leads_para_seguimiento_domingo,
+    # Aliases para compatibilidad
     obtener_leads_sin_respuesta_mismo_dia,
     obtener_leads_sin_respuesta_1dia,
     obtener_leads_sin_respuesta_3dias,
@@ -186,6 +191,36 @@ async def job_promo_domingo():
         logger.error(f"Error en job_promo_domingo: {e}", exc_info=False)
 
 
+async def job_seguimiento_domingo():
+    """Seguimiento dominical: todos los que no respondieron ningún seguimiento."""
+    try:
+        logger.info("📅 Ejecutando: Seguimiento DOMINGO")
+        leads = await obtener_leads_para_seguimiento_domingo()
+        if not leads:
+            logger.debug("No hay leads para seguimiento dominical")
+            return
+        for lead in leads:
+            if lead.anuncio_producto:
+                mensaje = (
+                    f"Hola {lead.nombre or 'che'}! Dominguito especial en Rebody 🌟\n\n"
+                    f"¿Seguís pensando en el {lead.anuncio_producto}?\n\n"
+                    f"Esta semana tenemos stock disponible. ¿Te ayudo con algo?"
+                )
+            else:
+                mensaje = (
+                    f"Hola {lead.nombre or 'che'}! Dominguito especial en Rebody 🌟\n\n"
+                    f"¿Seguís interesado en nuestros productos?\n\n"
+                    f"Acá estoy para ayudarte cuando quieras 😊"
+                )
+            exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
+            if exito:
+                logger.info(f"✓ Seguimiento domingo enviado a {lead.telefono}")
+            else:
+                logger.error(f"✗ Fallo envío domingo a {lead.telefono}")
+    except Exception as e:
+        logger.error(f"Error en job_seguimiento_domingo: {e}", exc_info=False)
+
+
 async def job_encuesta_post_venta():
     """Envía encuesta de satisfacción 2 horas después de la compra."""
     try:
@@ -270,48 +305,54 @@ async def task_seguimientos_programados_loop():
 
 
 async def task_seguimiento_mismo_dia_loop():
-    """Ejecuta seguimiento mismo día cada 30 minutos."""
+    """Ejecuta seguimiento 1 cada 30 minutos (cualquier hora)."""
     while True:
         try:
             await job_seguimiento_mismo_dia()
         except Exception as e:
-            logger.error(f"Error en loop de mismo día: {e}", exc_info=False)
+            logger.error(f"Error en loop seguimiento 1: {e}", exc_info=False)
         await asyncio.sleep(1800)  # 30 minutos
 
 
-async def task_seguimiento_1dia_loop():
-    """Ejecuta seguimiento 1 día cada hora."""
+async def task_seguimiento_15h_loop():
+    """Ejecuta seguimientos 2 y 3 exactamente a las 15:00 (hora Paraguay) cada día."""
+    ultimo_dia_ejecutado = None
     while True:
         try:
-            await job_seguimiento_1dia()
+            ahora = datetime.now(TZ)
+            hoy = ahora.date()
+            if ahora.hour == 15 and ahora.minute < 30 and hoy != ultimo_dia_ejecutado:
+                logger.info("⏰ 15:00 Paraguay — ejecutando seguimientos 2 y 3")
+                await job_seguimiento_1dia()
+                await job_seguimiento_3dias()
+                ultimo_dia_ejecutado = hoy
+                await asyncio.sleep(1800)  # evitar re-ejecución en el mismo slot
+            else:
+                await asyncio.sleep(60)
         except Exception as e:
-            logger.error(f"Error en loop de 1 día: {e}", exc_info=False)
-        await asyncio.sleep(3600)  # 1 hora
-
-
-async def task_seguimiento_3dias_loop():
-    """Ejecuta seguimiento 3 días cada 2 horas."""
-    while True:
-        try:
-            await job_seguimiento_3dias()
-        except Exception as e:
-            logger.error(f"Error en loop de 3 días: {e}", exc_info=False)
-        await asyncio.sleep(7200)  # 2 horas
+            logger.error(f"Error en loop 15h: {e}", exc_info=False)
+            await asyncio.sleep(60)
 
 
 async def task_promo_domingo_loop():
-    """Ejecuta promos domingo a las 16:00 (4 PM) solo los domingos."""
+    """Ejecuta seguimiento dominical a las 14:00 Paraguay todos los domingos."""
+    ultimo_domingo_ejecutado = None
     while True:
         try:
             ahora = datetime.now(TZ)
             es_domingo = ahora.weekday() == 6
-            if es_domingo and ahora.hour == 16 and ahora.minute == 0:
-                await job_promo_domingo()
-                await asyncio.sleep(60)
+            hoy = ahora.date()
+            if es_domingo and ahora.hour == 14 and ahora.minute < 30 and hoy != ultimo_domingo_ejecutado:
+                logger.info("⏰ Domingo 14:00 — ejecutando seguimiento dominical")
+                await job_seguimiento_mismo_dia()   # capturar cualquier pendiente
+                await job_seguimiento_domingo()     # job dominical
+                ultimo_domingo_ejecutado = hoy
+                await asyncio.sleep(1800)
             else:
-                await asyncio.sleep(30)
+                await asyncio.sleep(60)
         except Exception as e:
-            logger.error(f"Error en loop de promo domingo: {e}", exc_info=False)
+            logger.error(f"Error en loop domingo: {e}", exc_info=False)
+            await asyncio.sleep(60)
 
 
 async def task_encuesta_post_venta_loop():
@@ -333,8 +374,7 @@ def crear_background_tasks() -> list:
     return [
         asyncio.create_task(task_seguimientos_programados_loop()),
         asyncio.create_task(task_seguimiento_mismo_dia_loop()),
-        asyncio.create_task(task_seguimiento_1dia_loop()),
-        asyncio.create_task(task_seguimiento_3dias_loop()),
+        asyncio.create_task(task_seguimiento_15h_loop()),
         asyncio.create_task(task_promo_domingo_loop()),
         asyncio.create_task(task_encuesta_post_venta_loop()),
     ]
