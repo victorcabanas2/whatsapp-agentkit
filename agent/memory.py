@@ -316,103 +316,77 @@ class SeguimientoProgramado(Base):
         return f"{status} <SeguimientoProgramado {self.telefono} → {self.momento_programado}>"
 
 
+async def _run_migration(sql: str, label: str):
+    """Ejecuta una migración DDL en su propia transacción. Ignora si la columna ya existe."""
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(sql))
+        logger.info(f"✓ Migración completada: {label}")
+    except Exception:
+        pass  # columna ya existe — normal en deploys subsecuentes
+
+
 async def ejecutar_migraciones():
-    """Ejecuta migraciones necesarias para nuevas columnas/tablas."""
-    async with engine.begin() as conn:
-        # Migración: Agregar columna seguimiento_mismo_dia_enviado si no existe
-        try:
-            # PostgreSQL: checar si la columna existe
-            result = await conn.execute(
-                text("""
-                    SELECT column_name FROM information_schema.columns
-                    WHERE table_name='leads' AND column_name='seguimiento_mismo_dia_enviado'
-                """)
-            )
-            if not result.fetchone():
-                logger.info("🔄 Agregando columna seguimiento_mismo_dia_enviado...")
-                await conn.execute(
-                    text("ALTER TABLE leads ADD COLUMN seguimiento_mismo_dia_enviado BOOLEAN DEFAULT FALSE NOT NULL")
-                )
-                logger.info("✓ Columna seguimiento_mismo_dia_enviado agregada correctamente")
-        except Exception as e:
-            logger.warning(f"⚠️ Error en migración de seguimiento_mismo_dia_enviado: {e}")
-            # Si es SQLite, el error es diferente — ignorar
+    """
+    Ejecuta migraciones necesarias para nuevas columnas/tablas.
 
-        # Migración: Agregar columna anuncio_producto si no existe
-        # Usa ALTER TABLE directo — funciona en SQLite y PostgreSQL
-        # (falla silenciosamente si la columna ya existe)
-        try:
-            await conn.execute(
-                text("ALTER TABLE leads ADD COLUMN anuncio_producto VARCHAR(200) NULL")
-            )
-            logger.info("✓ Columna anuncio_producto agregada correctamente")
-        except Exception:
-            pass  # Columna ya existe — normal en deploys subsecuentes
+    IMPORTANTE: Cada ALTER TABLE corre en su propia transacción independiente.
+    En PostgreSQL, un fallo dentro de una transacción la aborta completa — si
+    todos los ALTER van en una sola transacción, el primer fallo (columna ya
+    existente) aborta las demás. Con transacciones individuales, cada migración
+    es independiente.
+    """
+    await _run_migration(
+        "ALTER TABLE leads ADD COLUMN seguimiento_mismo_dia_enviado BOOLEAN DEFAULT FALSE NOT NULL",
+        "seguimiento_mismo_dia_enviado"
+    )
+    await _run_migration(
+        "ALTER TABLE leads ADD COLUMN anuncio_producto VARCHAR(200) NULL",
+        "anuncio_producto"
+    )
+    await _run_migration(
+        "ALTER TABLE leads ADD COLUMN desistido BOOLEAN DEFAULT FALSE NOT NULL",
+        "desistido"
+    )
+    await _run_migration(
+        "ALTER TABLE leads ADD COLUMN ultimo_mensaje_usuario TIMESTAMP NULL",
+        "ultimo_mensaje_usuario"
+    )
+    await _run_migration(
+        "ALTER TABLE leads ADD COLUMN fecha_seguimiento_mismo_dia TIMESTAMP NULL",
+        "fecha_seguimiento_mismo_dia"
+    )
+    await _run_migration(
+        "ALTER TABLE leads ADD COLUMN fecha_seguimiento_1dia TIMESTAMP NULL",
+        "fecha_seguimiento_1dia"
+    )
+    await _run_migration(
+        "ALTER TABLE leads ADD COLUMN seguimientos_enviados INTEGER DEFAULT 0 NOT NULL",
+        "seguimientos_enviados"
+    )
+    await _run_migration(
+        "ALTER TABLE leads ADD COLUMN fecha_ultimo_seguimiento TIMESTAMP NULL",
+        "fecha_ultimo_seguimiento"
+    )
 
-        try:
-            await conn.execute(text("ALTER TABLE leads ADD COLUMN desistido BOOLEAN DEFAULT FALSE NOT NULL"))
-            logger.info("✓ Columna desistido agregada")
-        except Exception:
-            pass
+    # Migración de datos: backfill seguimientos_enviados desde flags legacy
+    await _run_migration("""
+        UPDATE leads
+        SET seguimientos_enviados = (
+            CASE WHEN seguimiento_mismo_dia_enviado = TRUE THEN 1 ELSE 0 END +
+            CASE WHEN seguimiento_1dia_enviado = TRUE THEN 1 ELSE 0 END +
+            CASE WHEN seguimiento_3dias_enviado = TRUE THEN 1 ELSE 0 END
+        )
+        WHERE seguimientos_enviados = 0
+    """, "backfill seguimientos_enviados")
 
-        try:
-            await conn.execute(text("ALTER TABLE leads ADD COLUMN ultimo_mensaje_usuario TIMESTAMP NULL"))
-            logger.info("✓ Columna ultimo_mensaje_usuario agregada")
-        except Exception:
-            pass
-
-        try:
-            await conn.execute(text("ALTER TABLE leads ADD COLUMN fecha_seguimiento_mismo_dia TIMESTAMP NULL"))
-            logger.info("✓ Columna fecha_seguimiento_mismo_dia agregada")
-        except Exception:
-            pass
-
-        try:
-            await conn.execute(text("ALTER TABLE leads ADD COLUMN fecha_seguimiento_1dia TIMESTAMP NULL"))
-            logger.info("✓ Columna fecha_seguimiento_1dia agregada")
-        except Exception:
-            pass
-
-        try:
-            await conn.execute(text("ALTER TABLE leads ADD COLUMN seguimientos_enviados INTEGER DEFAULT 0 NOT NULL"))
-            logger.info("✓ Columna seguimientos_enviados agregada")
-        except Exception:
-            pass
-
-        try:
-            await conn.execute(text("ALTER TABLE leads ADD COLUMN fecha_ultimo_seguimiento TIMESTAMP NULL"))
-            logger.info("✓ Columna fecha_ultimo_seguimiento agregada")
-        except Exception:
-            pass
-
-        # Migración de datos: backfill seguimientos_enviados desde flags legacy
-        # para que leads que ya recibieron follow-ups no los vuelvan a recibir
-        try:
-            await conn.execute(text("""
-                UPDATE leads
-                SET seguimientos_enviados = (
-                    CASE WHEN seguimiento_mismo_dia_enviado = 1 THEN 1 ELSE 0 END +
-                    CASE WHEN seguimiento_1dia_enviado = 1 THEN 1 ELSE 0 END +
-                    CASE WHEN seguimiento_3dias_enviado = 1 THEN 1 ELSE 0 END
-                )
-                WHERE seguimientos_enviados = 0
-            """))
-            logger.info("✓ Migración seguimientos_enviados completada")
-        except Exception:
-            pass
-
-        # Migración de datos: poblar fecha_ultimo_seguimiento desde timestamps legacy
-        # para evitar re-envíos inmediatos a leads que ya recibieron seguimiento
-        try:
-            await conn.execute(text("""
-                UPDATE leads
-                SET fecha_ultimo_seguimiento = COALESCE(fecha_seguimiento_1dia, fecha_seguimiento_mismo_dia)
-                WHERE fecha_ultimo_seguimiento IS NULL
-                AND (fecha_seguimiento_mismo_dia IS NOT NULL OR fecha_seguimiento_1dia IS NOT NULL)
-            """))
-            logger.info("✓ Migración fecha_ultimo_seguimiento completada")
-        except Exception:
-            pass
+    # Migración de datos: poblar fecha_ultimo_seguimiento desde timestamps legacy
+    await _run_migration("""
+        UPDATE leads
+        SET fecha_ultimo_seguimiento = COALESCE(fecha_seguimiento_1dia, fecha_seguimiento_mismo_dia)
+        WHERE fecha_ultimo_seguimiento IS NULL
+        AND (fecha_seguimiento_mismo_dia IS NOT NULL OR fecha_seguimiento_1dia IS NOT NULL)
+    """, "backfill fecha_ultimo_seguimiento")
 
 
 async def inicializar_db():
