@@ -663,6 +663,9 @@ async def generar_mensaje_seguimiento_contextual(
         historial_texto = "(Sin mensajes previos registrados en el sistema)"
 
     descripciones_tipo = {
+        "seguimiento_1": "primer seguimiento (3+ horas después del primer mensaje del cliente)",
+        "seguimiento_2": "segundo seguimiento (lead no respondió al primero, ~20-24hs después)",
+        "seguimiento_3": "tercer y último seguimiento (último intento antes de cerrar el lead)",
         "mismo_dia": "primer seguimiento (3-48hs después del contacto inicial)",
         "1dia": "segundo seguimiento (día siguiente sin respuesta del cliente)",
         "3dias": "tercer contacto (3 días sin respuesta)",

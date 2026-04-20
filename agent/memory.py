@@ -153,6 +153,10 @@ class Lead(Base):
     fecha_seguimiento_mismo_dia: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     fecha_seguimiento_1dia: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
+    # Sistema unificado de seguimiento (reemplaza la lógica de ventanas de tiempo)
+    seguimientos_enviados: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    fecha_ultimo_seguimiento: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
     # Lead Scoring
     score: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
     intencion: Mapped[str] = mapped_column(String(10), default="cold", nullable=False)
@@ -366,6 +370,47 @@ async def ejecutar_migraciones():
         try:
             await conn.execute(text("ALTER TABLE leads ADD COLUMN fecha_seguimiento_1dia TIMESTAMP NULL"))
             logger.info("✓ Columna fecha_seguimiento_1dia agregada")
+        except Exception:
+            pass
+
+        try:
+            await conn.execute(text("ALTER TABLE leads ADD COLUMN seguimientos_enviados INTEGER DEFAULT 0 NOT NULL"))
+            logger.info("✓ Columna seguimientos_enviados agregada")
+        except Exception:
+            pass
+
+        try:
+            await conn.execute(text("ALTER TABLE leads ADD COLUMN fecha_ultimo_seguimiento TIMESTAMP NULL"))
+            logger.info("✓ Columna fecha_ultimo_seguimiento agregada")
+        except Exception:
+            pass
+
+        # Migración de datos: backfill seguimientos_enviados desde flags legacy
+        # para que leads que ya recibieron follow-ups no los vuelvan a recibir
+        try:
+            await conn.execute(text("""
+                UPDATE leads
+                SET seguimientos_enviados = (
+                    CASE WHEN seguimiento_mismo_dia_enviado = 1 THEN 1 ELSE 0 END +
+                    CASE WHEN seguimiento_1dia_enviado = 1 THEN 1 ELSE 0 END +
+                    CASE WHEN seguimiento_3dias_enviado = 1 THEN 1 ELSE 0 END
+                )
+                WHERE seguimientos_enviados = 0
+            """))
+            logger.info("✓ Migración seguimientos_enviados completada")
+        except Exception:
+            pass
+
+        # Migración de datos: poblar fecha_ultimo_seguimiento desde timestamps legacy
+        # para evitar re-envíos inmediatos a leads que ya recibieron seguimiento
+        try:
+            await conn.execute(text("""
+                UPDATE leads
+                SET fecha_ultimo_seguimiento = COALESCE(fecha_seguimiento_1dia, fecha_seguimiento_mismo_dia)
+                WHERE fecha_ultimo_seguimiento IS NULL
+                AND (fecha_seguimiento_mismo_dia IS NOT NULL OR fecha_seguimiento_1dia IS NOT NULL)
+            """))
+            logger.info("✓ Migración fecha_ultimo_seguimiento completada")
         except Exception:
             pass
 
@@ -1993,3 +2038,92 @@ async def validar_integridad_referencial() -> dict:
             "errores": errores,
             "timestamp": datetime.utcnow()
         }
+
+
+# ════════════════════════════════════════════════════════════
+# SISTEMA UNIFICADO DE SEGUIMIENTO
+# ════════════════════════════════════════════════════════════
+
+async def obtener_leads_para_seguimiento_unificado() -> list[Lead]:
+    """
+    Query unificada que reemplaza obtener_leads_para_seguimiento_1/2/3
+    y obtener_leads_sin_ningun_seguimiento.
+
+    Reglas:
+    - Menos de 3 seguimientos enviados
+    - 3+ horas desde primer contacto
+    - No envió seguimiento en las últimas 20h (o nunca envió)
+    - Lead frío: nunca respondió o su última respuesta fue hace 20+ horas
+    - Sin límite superior de tiempo — resiste reinicios de Railway
+    """
+    MAX_FOLLOW_UPS = 3
+    ahora = datetime.utcnow()
+    hace_3h = ahora - timedelta(hours=3)
+    hace_20h = ahora - timedelta(hours=20)
+
+    async with async_session() as session:
+        query = (
+            select(Lead)
+            .where(Lead.seguimientos_enviados < MAX_FOLLOW_UPS)
+            .where(Lead.fue_cliente == False)
+            .where(Lead.desistido == False)
+            .where(Lead.en_manos_humanas == False)
+            .where(Lead.primer_contacto <= hace_3h)
+            # No se envió ningún seguimiento, O el último fue hace 20+ horas
+            .where(
+                (Lead.fecha_ultimo_seguimiento == None) |
+                (Lead.fecha_ultimo_seguimiento <= hace_20h)
+            )
+            # Lead frío: nunca respondió, O solo envió el mensaje inicial (≤30min del primer contacto),
+            # O respondió pero ya pasaron 20+ horas (se enfrió)
+            .where(
+                (Lead.ultimo_mensaje_usuario == None) |
+                (Lead.ultimo_mensaje_usuario <= Lead.primer_contacto + timedelta(minutes=30)) |
+                (Lead.ultimo_mensaje_usuario <= hace_20h)
+            )
+            .order_by(Lead.primer_contacto.asc())
+        )
+        result = await session.execute(query)
+        return list(result.scalars().all())
+
+
+async def marcar_seguimiento_enviado(telefono: str):
+    """
+    Incrementa el contador seguimientos_enviados y actualiza el timestamp.
+    Solo llamar DESPUÉS de confirmar que el mensaje fue enviado exitosamente.
+    Mantiene los flags booleanos legacy en sincronía para compatibilidad con el panel.
+    """
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+        if not lead:
+            return
+        lead.seguimientos_enviados += 1
+        lead.fecha_ultimo_seguimiento = datetime.utcnow()
+        # Mantener flags legacy sincronizados
+        if lead.seguimientos_enviados == 1:
+            lead.seguimiento_mismo_dia_enviado = True
+            lead.fecha_seguimiento_mismo_dia = datetime.utcnow()
+        elif lead.seguimientos_enviados == 2:
+            lead.seguimiento_1dia_enviado = True
+            lead.fecha_seguimiento_1dia = datetime.utcnow()
+        elif lead.seguimientos_enviados >= 3:
+            lead.seguimiento_3dias_enviado = True
+        await session.commit()
+        logger.info(f"✓ Seguimiento {lead.seguimientos_enviados}/3 marcado para {telefono}")
+
+
+async def actualizar_fecha_ultimo_seguimiento(telefono: str):
+    """
+    Actualiza solo el timestamp sin incrementar el contador.
+    Se llama cuando Claude decide NO enviar seguimiento, para evitar
+    re-consultar este lead en los próximos 20h sin consumir un intento.
+    """
+    async with async_session() as session:
+        query = select(Lead).where(Lead.telefono == telefono)
+        result = await session.execute(query)
+        lead = result.scalar_one_or_none()
+        if lead:
+            lead.fecha_ultimo_seguimiento = datetime.utcnow()
+            await session.commit()

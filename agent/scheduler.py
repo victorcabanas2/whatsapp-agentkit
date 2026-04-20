@@ -3,9 +3,7 @@
 
 """
 Ejecuta tareas automáticas en background usando asyncio (sin APScheduler):
-- Seguimiento a clientes MISMO DÍA de contacto inicial
-- Seguimiento a clientes 1 día después de contacto
-- Seguimiento a clientes 3 días después de contacto
+- Seguimiento unificado (reemplaza mismo_dia + 1dia + 3dias + pendientes)
 - Recordatorio de promo cada domingo
 - Seguimientos programados dinámicamente por el cliente ("escríbeme en 4 minutos")
 
@@ -18,17 +16,12 @@ from datetime import datetime
 import pytz
 
 from agent.memory import (
-    obtener_leads_para_seguimiento_1,
-    obtener_leads_para_seguimiento_2,
-    obtener_leads_para_seguimiento_3,
+    # Sistema unificado
+    obtener_leads_para_seguimiento_unificado,
+    marcar_seguimiento_enviado,
+    actualizar_fecha_ultimo_seguimiento,
+    # Domingo y encuesta (sin cambios)
     obtener_leads_para_seguimiento_domingo,
-    # Aliases para compatibilidad
-    obtener_leads_sin_respuesta_mismo_dia,
-    obtener_leads_sin_respuesta_1dia,
-    obtener_leads_sin_respuesta_3dias,
-    marcar_seguimiento_mismo_dia,
-    marcar_seguimiento_1dia,
-    marcar_seguimiento_3dias,
     obtener_carritos_pendientes,
     marcar_carrito_recordatorio_enviado,
     obtener_pedidos_sin_encuesta,
@@ -36,7 +29,6 @@ from agent.memory import (
     obtener_seguimientos_programados,
     marcar_seguimiento_programado_enviado,
     obtener_historial,
-    obtener_leads_sin_ningun_seguimiento,
 )
 from agent.brain import generar_mensaje_seguimiento_contextual
 from agent.providers import obtener_proveedor
@@ -50,106 +42,38 @@ TZ = pytz.timezone('America/Asuncion')
 # FUNCIONES ASYNC — Cada una es una tarea independiente
 # ════════════════════════════════════════════════════════════════
 
-async def job_seguimiento_mismo_dia():
-    """Seguimiento contextual el mismo día de contacto (3-72hs). Lee historial con Claude."""
-    try:
-        logger.info("📅 Ejecutando: Seguimiento MISMO DÍA")
-        leads = await obtener_leads_sin_respuesta_mismo_dia()
-        if not leads:
-            logger.debug("No hay leads con seguimiento mismo día pendiente")
-            return
-        logger.info(f"📋 {len(leads)} leads candidatos para seguimiento mismo día")
-        for lead in leads:
-            historial = await obtener_historial(lead.telefono, limite=20)
-            mensaje = await generar_mensaje_seguimiento_contextual(lead, historial, "mismo_dia")
-            await marcar_seguimiento_mismo_dia(lead.telefono)
-            if mensaje is None:
-                logger.info(f"🚫 Seguimiento mismo día omitido → {lead.telefono}")
-                continue
-            exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
-            if exito:
-                logger.info(f"✓ Seguimiento mismo día enviado → {lead.telefono}")
-            else:
-                logger.error(f"✗ Fallo envío → {lead.telefono}")
-    except Exception as e:
-        logger.error(f"Error en job_seguimiento_mismo_dia: {e}", exc_info=False)
-
-
-async def job_seguimiento_1dia():
-    """Seguimiento contextual al día siguiente. Lee historial con Claude."""
-    try:
-        logger.info("📅 Ejecutando: Seguimiento 1 día")
-        leads = await obtener_leads_sin_respuesta_1dia()
-        if not leads:
-            logger.debug("No hay leads con seguimiento 1 día pendiente")
-            return
-        logger.info(f"📋 {len(leads)} leads candidatos para seguimiento 1 día")
-        for lead in leads:
-            historial = await obtener_historial(lead.telefono, limite=20)
-            mensaje = await generar_mensaje_seguimiento_contextual(lead, historial, "1dia")
-            await marcar_seguimiento_1dia(lead.telefono)
-            if mensaje is None:
-                logger.info(f"🚫 Seguimiento 1día omitido → {lead.telefono}")
-                continue
-            exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
-            if exito:
-                logger.info(f"✓ Seguimiento 1día enviado → {lead.telefono}")
-            else:
-                logger.error(f"✗ Fallo envío → {lead.telefono}")
-    except Exception as e:
-        logger.error(f"Error en job_seguimiento_1dia: {e}", exc_info=False)
-
-
-async def job_seguimiento_3dias():
-    """Seguimiento contextual a los 3 días. Lee historial con Claude."""
-    try:
-        logger.info("📅 Ejecutando: Seguimiento 3 días")
-        leads = await obtener_leads_sin_respuesta_3dias()
-        if not leads:
-            logger.debug("No hay leads con seguimiento 3 días pendiente")
-            return
-        logger.info(f"📋 {len(leads)} leads candidatos para seguimiento 3 días")
-        for lead in leads:
-            historial = await obtener_historial(lead.telefono, limite=20)
-            mensaje = await generar_mensaje_seguimiento_contextual(lead, historial, "3dias")
-            await marcar_seguimiento_3dias(lead.telefono)
-            if mensaje is None:
-                logger.info(f"🚫 Seguimiento 3días omitido → {lead.telefono}")
-                continue
-            exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
-            if exito:
-                logger.info(f"✓ Seguimiento 3días enviado → {lead.telefono}")
-            else:
-                logger.error(f"✗ Fallo envío → {lead.telefono}")
-    except Exception as e:
-        logger.error(f"Error en job_seguimiento_3dias: {e}", exc_info=False)
-
-
-async def job_seguimiento_pendientes():
+async def job_seguimiento_unificado():
     """
-    Catch-all: recupera leads que NUNCA recibieron seguimiento por reinicios de servidor.
-    Los 87 leads caídos en el gap entran aquí. Corre cada hora.
+    Job único que reemplaza mismo_dia + 1dia + 3dias + pendientes.
+
+    Envía el próximo seguimiento (1, 2 o 3) a todos los leads elegibles.
+    Solo marca DESPUÉS de confirmar envío exitoso.
+    Resiste reinicios de Railway: el estado vive en la DB, no en memoria.
     """
     try:
-        leads = await obtener_leads_sin_ningun_seguimiento()
+        leads = await obtener_leads_para_seguimiento_unificado()
         if not leads:
+            logger.debug("No hay leads elegibles para seguimiento")
             return
-        logger.info(f"🔄 Recuperando {len(leads)} leads sin ningún seguimiento previo")
+        logger.info(f"📋 {len(leads)} leads elegibles para seguimiento")
         for lead in leads:
             historial = await obtener_historial(lead.telefono, limite=20)
-            mensaje = await generar_mensaje_seguimiento_contextual(lead, historial, "pendiente")
-            # Marcar mismo_dia para moverlos a la cadena normal
-            await marcar_seguimiento_mismo_dia(lead.telefono)
+            numero_seguimiento = lead.seguimientos_enviados + 1  # 1, 2 o 3
+            tipo = f"seguimiento_{numero_seguimiento}"
+            mensaje = await generar_mensaje_seguimiento_contextual(lead, historial, tipo)
             if mensaje is None:
-                logger.info(f"🚫 Lead pendiente omitido → {lead.telefono}")
+                # Claude decidió no enviar — actualizar timestamp para no re-consultar en 20h
+                await actualizar_fecha_ultimo_seguimiento(lead.telefono)
+                logger.info(f"🚫 Seguimiento {numero_seguimiento} omitido → {lead.telefono}")
                 continue
             exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
             if exito:
-                logger.info(f"✓ Seguimiento pendiente enviado → {lead.telefono}")
+                await marcar_seguimiento_enviado(lead.telefono)  # solo marca si fue exitoso
+                logger.info(f"✓ Seguimiento {numero_seguimiento}/3 enviado → {lead.telefono}")
             else:
-                logger.error(f"✗ Fallo envío pendiente → {lead.telefono}")
+                logger.error(f"✗ Fallo envío seguimiento {numero_seguimiento} → {lead.telefono}")
     except Exception as e:
-        logger.error(f"Error en job_seguimiento_pendientes: {e}", exc_info=False)
+        logger.error(f"Error en job_seguimiento_unificado: {e}", exc_info=False)
 
 
 async def job_promo_domingo():
@@ -298,48 +222,17 @@ async def task_seguimientos_programados_loop():
             await job_seguimientos_programados()
         except Exception as e:
             logger.error(f"Error en loop de seguimientos: {e}", exc_info=False)
-
         await asyncio.sleep(30)
 
 
-async def task_seguimiento_pendientes_loop():
-    """Catch-all: corre cada hora para recuperar leads que cayeron fuera de la ventana de tiempo."""
+async def task_seguimiento_unificado_loop():
+    """Loop unificado cada 30 minutos. Reemplaza mismo_dia, pendientes, 15h."""
     while True:
         try:
-            await job_seguimiento_pendientes()
+            await job_seguimiento_unificado()
         except Exception as e:
-            logger.error(f"Error en loop pendientes: {e}", exc_info=False)
-        await asyncio.sleep(3600)  # 1 hora
-
-
-async def task_seguimiento_mismo_dia_loop():
-    """Ejecuta seguimiento 1 cada 30 minutos (cualquier hora)."""
-    while True:
-        try:
-            await job_seguimiento_mismo_dia()
-        except Exception as e:
-            logger.error(f"Error en loop seguimiento 1: {e}", exc_info=False)
+            logger.error(f"Error en loop unificado: {e}", exc_info=False)
         await asyncio.sleep(1800)  # 30 minutos
-
-
-async def task_seguimiento_15h_loop():
-    """Ejecuta seguimientos 2 y 3 exactamente a las 15:00 (hora Paraguay) cada día."""
-    ultimo_dia_ejecutado = None
-    while True:
-        try:
-            ahora = datetime.now(TZ)
-            hoy = ahora.date()
-            if ahora.hour == 15 and ahora.minute < 30 and hoy != ultimo_dia_ejecutado:
-                logger.info("⏰ 15:00 Paraguay — ejecutando seguimientos 2 y 3")
-                await job_seguimiento_1dia()
-                await job_seguimiento_3dias()
-                ultimo_dia_ejecutado = hoy
-                await asyncio.sleep(1800)  # evitar re-ejecución en el mismo slot
-            else:
-                await asyncio.sleep(60)
-        except Exception as e:
-            logger.error(f"Error en loop 15h: {e}", exc_info=False)
-            await asyncio.sleep(60)
 
 
 async def task_promo_domingo_loop():
@@ -352,7 +245,6 @@ async def task_promo_domingo_loop():
             hoy = ahora.date()
             if es_domingo and ahora.hour == 14 and ahora.minute < 30 and hoy != ultimo_domingo_ejecutado:
                 logger.info("⏰ Domingo 14:00 — ejecutando seguimiento dominical")
-                await job_seguimiento_mismo_dia()   # capturar cualquier pendiente
                 await job_seguimiento_domingo()     # job dominical
                 ultimo_domingo_ejecutado = hoy
                 await asyncio.sleep(1800)
@@ -381,9 +273,7 @@ def crear_background_tasks() -> list:
     """Retorna lista de tasks para crear en FastAPI lifespan."""
     return [
         asyncio.create_task(task_seguimientos_programados_loop()),
-        asyncio.create_task(task_seguimiento_pendientes_loop()),
-        asyncio.create_task(task_seguimiento_mismo_dia_loop()),
-        asyncio.create_task(task_seguimiento_15h_loop()),
+        asyncio.create_task(task_seguimiento_unificado_loop()),
         asyncio.create_task(task_promo_domingo_loop()),
         asyncio.create_task(task_encuesta_post_venta_loop()),
     ]
