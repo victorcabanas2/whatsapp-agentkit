@@ -200,8 +200,13 @@ def detectar_producto_en_mensaje(texto: str) -> str | None:
             return "FOREO FAQ 221"
         return "FOREO"
 
-    # ThermBack
-    if any(k in t for k in ["thermback", "therm back", "manta led", "espalda led"]):
+    # ThermBack — incluye "faja" ya que clientes la llaman así
+    if any(k in t for k in [
+        "thermback", "therm back", "manta led", "espalda led",
+        "faja", "faja lumbar", "faja termica", "faja térmica",
+        "masajeador de espalda", "masajeador lumbar", "masajeador espalda",
+        "calor espalda", "cinturón lumbar", "cinturon lumbar",
+    ]):
         return "ThermBack LED"
 
     # SleepMask
@@ -604,11 +609,17 @@ async def _procesar_mensaje_individual(msg):
             for msg_hist in historial:
                 hist_content = msg_hist.get("content", "") if isinstance(msg_hist, dict) else getattr(msg_hist, "content", "")
                 if hist_content:
+                    # Caso A: ya identificamos el producto antes
                     match = _re.search(r'\[CLIENTE VIENE DE ANUNCIO DE: ([^\]]+)\]', hist_content)
                     if match:
                         producto_del_historial = match.group(1).strip()
                         msg.contexto_anuncio = {"headline": producto_del_historial, "payload": None, "ad_url": None}
                         logger.info(f"📢 Producto recuperado del historial: {producto_del_historial}")
+                        break
+                    # Caso B: cliente de anuncio sin producto identificado — ya preguntamos una vez
+                    if "[CLIENTE DE ANUNCIO - NO SE PUDO IDENTIFICAR PRODUCTO]" in hist_content:
+                        msg.contexto_anuncio = {"is_ad": True, "payload": None, "headline": None, "ad_url": None, "ya_preguntado": True}
+                        logger.info(f"📢 Cliente de anuncio - producto no identificado, ya preguntamos")
                         break
 
         # ── INSTRUCCIÓN DE HISTORIAL (cuando hay conversación previa) ────
@@ -668,12 +679,22 @@ async def _procesar_mensaje_individual(msg):
                     producto_identificado = producto_en_texto
                     logger.info(f"🔍 Producto detectado en texto del mensaje: {producto_en_texto}")
 
-            if not producto_identificado and viene_de_anuncio_probablemente and not tiene_contexto_real:
-                # Último recurso: no hay datos del anuncio NI en el texto → preguntar brevemente
+            ya_preguntado = bool(msg.contexto_anuncio and msg.contexto_anuncio.get("ya_preguntado"))
+
+            if not producto_identificado and ya_preguntado:
+                # Ya preguntamos una vez — ahora ofrecer opciones concretas, no repetir la misma pregunta
+                contexto_sistema.append(f"🎯 CONTEXTO: Cliente viene de anuncio. Ya le preguntamos el producto una vez.")
+                contexto_sistema.append(f"✅ El cliente responde: \"{msg.texto}\"")
+                contexto_sistema.append(f"❌ NUNCA repitas '¿de qué producto es tu consulta?' — ya lo preguntaste.")
+                contexto_sistema.append(f"✅ Si dice 'el producto' / 'ese' / algo vago → Presentá las 2-3 opciones más populares con precios y links (JetBoots, ThermBack LED, Theragun Mini). Pedí que elija.")
+                contexto_sistema.append(f"✅ Si menciona algo concreto en su mensaje → identificá el producto y respondé directo.")
+                mensaje_contextualizado = f"[CLIENTE DE ANUNCIO - SEGUNDA INTERACCIÓN SIN PRODUCTO IDENTIFICADO] {msg.texto}"
+            elif not producto_identificado and viene_de_anuncio_probablemente and not tiene_contexto_real:
+                # Primera vez: no hay datos del anuncio NI en el texto → preguntar UNA vez brevemente
                 contexto_sistema.append(f"🎯 CONTEXTO: Este cliente probablemente viene de un anuncio de Instagram/Facebook.")
                 contexto_sistema.append(f"✅ El cliente escribió: \"{msg.texto}\"")
                 contexto_sistema.append(f"✅ No podemos identificar el producto exacto desde el anuncio.")
-                contexto_sistema.append(f"✅ Pregunta de forma breve y cálida: '¿Sobre qué producto es tu consulta?' — UNA SOLA pregunta.")
+                contexto_sistema.append(f"✅ Presentate como Belén y preguntá: '¿Sobre qué producto es tu consulta?' — UNA SOLA pregunta.")
                 contexto_sistema.append(f"✅ NO listes productos ni hagas preguntas largas. Solo esa pregunta corta.")
                 mensaje_contextualizado = f"[CLIENTE DE ANUNCIO - NO SE PUDO IDENTIFICAR PRODUCTO] {msg.texto}"
             else:

@@ -187,6 +187,31 @@ def mapear_anuncio_a_producto(anuncio_id: str) -> str:
         "faq_221": "FOREO FAQ™ 221 (Manos)",
         "faq221": "FOREO FAQ™ 221 (Manos)",
         "foreo": "FOREO FAQ™ 211 (Cuello)",
+
+        # ThermBack LED — clientes lo llaman "faja", "masajeador de espalda"
+        "thermback": "ThermBack LED",
+        "therm_back": "ThermBack LED",
+        "faja": "ThermBack LED",
+        "faja lumbar": "ThermBack LED",
+        "masajeador de espalda": "ThermBack LED",
+        "masajeador lumbar": "ThermBack LED",
+        "espalda led": "ThermBack LED",
+        "lumbar": "ThermBack LED",
+
+        # SleepMask
+        "sleepmask": "SleepMask",
+        "sleep mask": "SleepMask",
+        "antifaz": "SleepMask",
+
+        # RecoveryPulse
+        "recoverypulse": "RecoveryPulse Calf Sleeve",
+        "recovery pulse": "RecoveryPulse Calf Sleeve",
+        "manga compresion": "RecoveryPulse Calf Sleeve",
+        "manga de compresion": "RecoveryPulse Calf Sleeve",
+
+        # TheraCup
+        "theracup": "TheraCup",
+        "ventosa": "TheraCup",
     }
 
     # Buscar coincidencias en el ID del anuncio
