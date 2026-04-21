@@ -11,9 +11,9 @@
     "9146847002882": {
       "id": "9146847002882",
       "nombre": "WHOOP PEAK 5.0",
-      "stock": 0,
-      "disponible": false,
-      "timestamp": "2026-04-08T16:32:53"
+      "stock": 5,
+      "disponible": true,
+      "timestamp": "2026-04-21T08:46:00"
     },
     "9146858832130": {
       "id": "9146858832130",
