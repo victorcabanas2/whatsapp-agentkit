@@ -332,6 +332,30 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 logger.debug(f"Mensaje vacío de {telefono}, ignorando")
                 continue
 
+            # ── FETCH FULL MESSAGE FROM WHAPI — obtener referral.body ──
+            # El webhook de Whapi no incluye el campo referral, pero la
+            # API sí lo devuelve al pedir GET /messages/{id}.
+            if not ad_headline and mensaje_id:
+                full_msg = await self._fetch_message(mensaje_id)
+                referral_full = full_msg.get("referral", {})
+                if referral_full:
+                    body_text = (referral_full.get("body") or "").strip()
+                    headline_text = (referral_full.get("headline") or "").strip()
+                    source_id_full = (referral_full.get("source_id") or "").strip()
+                    body_url_full = (referral_full.get("body_url") or "").strip()
+
+                    if body_text or headline_text:
+                        ad_headline = headline_text or body_text
+                        logger.info(f"📢 Referral obtenido via fetchMessage: {ad_headline}")
+
+                    if source_id_full and not contexto_payload:
+                        contexto_payload = source_id_full
+                    if body_url_full:
+                        if contexto_payload and "|URL:" not in contexto_payload:
+                            contexto_payload = f"{contexto_payload}|URL:{body_url_full}"
+                        elif not contexto_payload:
+                            contexto_payload = f"URL:{body_url_full}"
+
             # EXTRAER ad_url DE contexto_payload SI ESTÁ INCLUIDA
             ad_url = None
             if contexto_payload and "|URL:" in contexto_payload:
@@ -357,6 +381,29 @@ class ProveedorWhapi(ProveedorWhatsApp):
             logger.info(f"📨 Mensaje parseado: {telefono} → {texto[:60]}...")
 
         return mensajes
+
+    async def _fetch_message(self, message_id: str) -> dict:
+        """
+        Fetches the full message data from Whapi API.
+        GET https://gate.whapi.cloud/messages/{message_id}
+        Returns the full message dict (includes referral field not present in webhooks).
+        """
+        if not self.token or not message_id:
+            return {}
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(
+                    f"https://gate.whapi.cloud/messages/{message_id}",
+                    headers={"Authorization": f"Bearer {self.token}"},
+                )
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    logger.warning(f"⚠️ fetchMessage {message_id}: HTTP {response.status_code}")
+                    return {}
+        except Exception as e:
+            logger.error(f"❌ fetchMessage error: {e}")
+            return {}
 
     async def _transcribir_audio(self, audio_url: str) -> str:
         """
