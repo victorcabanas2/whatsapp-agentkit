@@ -475,6 +475,15 @@ async def generar_respuesta(
     if (not mensaje or len(mensaje.strip()) < 2) and not imagen_url:
         return obtener_mensaje_fallback()
 
+    # Saludos simples sin historial: respuesta pre-escrita sin llamar a Claude
+    # Solo aplica en primer contacto (sin historial) — con historial Claude necesita contexto
+    SALUDOS = {"hola", "holis", "hi", "hey", "buenas", "buen dia", "buen día",
+               "buenos dias", "buenos días", "buenas tardes", "buenas noches", "hello", "ola"}
+    mensaje_lower = mensaje.strip().lower().rstrip("!.?,")
+    if not historial and not imagen_url and not contexto_adicional and mensaje_lower in SALUDOS:
+        logger.info(f"⚡ Saludo sin historial — respuesta pre-escrita (sin llamar a Claude)")
+        return "Hola, soy Belén, la agente de Rebody 😊 ¿En qué te puedo ayudar?"
+
     # Cargar system prompt
     system_prompt = cargar_system_prompt()
     if not system_prompt:
@@ -509,54 +518,17 @@ async def generar_respuesta(
         msg_role = msg.get("role", "user")
         msg_content = msg.get("content", "")
 
-        # Detectar si el contenido tiene imagen guardada ([IMG:...])
+        # Imágenes en el historial: reemplazar con placeholder de texto
+        # Re-enviar la imagen completa cuesta 1,000-3,000 tokens por mensaje — Belén ya la procesó antes
         if msg_content.startswith("[IMG:"):
-            # Extraer URL de imagen
-            try:
-                end_img_tag = msg_content.find("]")
-                if end_img_tag > 5:
-                    img_url = msg_content[5:end_img_tag]  # Extraer entre [IMG: y ]
-                    msg_text = msg_content[end_img_tag + 1:].strip()  # Resto del contenido
-
-                    # Crear content block con imagen + texto
-                    content = [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "url",
-                                "url": img_url
-                            }
-                        }
-                    ]
-                    if msg_text:
-                        content.append({
-                            "type": "text",
-                            "text": msg_text
-                        })
-
-                    logger.debug(f"🖼️ Imagen extraída del historial: {img_url[:60]}...")
-                    mensajes.append({
-                        "role": msg_role,
-                        "content": content
-                    })
-                else:
-                    # Si el formato está mal, guardar como texto
-                    mensajes.append({
-                        "role": msg_role,
-                        "content": msg_content
-                    })
-            except Exception as e:
-                logger.warning(f"⚠️ Error extrayendo imagen del historial: {e}")
-                mensajes.append({
-                    "role": msg_role,
-                    "content": msg_content
-                })
+            end_img_tag = msg_content.find("]")
+            msg_text = msg_content[end_img_tag + 1:].strip() if end_img_tag > 5 else ""
+            placeholder = "[imagen enviada anteriormente]"
+            if msg_text:
+                placeholder += f" {msg_text}"
+            mensajes.append({"role": msg_role, "content": placeholder})
         else:
-            # Mensaje sin imagen, guardar como texto
-            mensajes.append({
-                "role": msg_role,
-                "content": msg_content
-            })
+            mensajes.append({"role": msg_role, "content": msg_content})
 
     # ═══════════════════════════════════════════════════════════
     # PROCESAR MENSAJE ACTUAL
