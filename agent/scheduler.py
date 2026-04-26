@@ -37,6 +37,16 @@ logger = logging.getLogger("agentkit.scheduler")
 proveedor = obtener_proveedor()
 TZ = pytz.timezone('America/Asuncion')
 
+HORA_INICIO = 8.0    # 08:00
+HORA_FIN    = 22.5   # 22:30
+
+
+def es_horario_activo() -> bool:
+    """Retorna True si la hora actual está entre 08:00 y 22:30 (Paraguay)."""
+    ahora = datetime.now(TZ)
+    hora = ahora.hour + ahora.minute / 60
+    return HORA_INICIO <= hora < HORA_FIN
+
 
 # ════════════════════════════════════════════════════════════════
 # FUNCIONES ASYNC — Cada una es una tarea independiente
@@ -50,6 +60,9 @@ async def job_seguimiento_unificado():
     Solo marca DESPUÉS de confirmar envío exitoso.
     Resiste reinicios de Railway: el estado vive en la DB, no en memoria.
     """
+    if not es_horario_activo():
+        logger.debug("🌙 Fuera de horario (08:00–22:30) — seguimiento omitido")
+        return
     try:
         leads = await obtener_leads_para_seguimiento_unificado()
         if not leads:
@@ -145,6 +158,8 @@ async def job_seguimiento_domingo():
 
 async def job_encuesta_post_venta():
     """Envía encuesta de satisfacción 2 horas después de la compra."""
+    if not es_horario_activo():
+        return
     try:
         logger.info("📋 Ejecutando: Encuesta post-venta")
         pedidos = await obtener_pedidos_sin_encuesta()
@@ -179,6 +194,8 @@ async def job_encuesta_post_venta():
 
 async def job_seguimientos_programados():
     """Envía seguimientos programados dinámicamente (ej: 'escríbeme en 4 minutos')."""
+    if not es_horario_activo():
+        return
     try:
         logger.debug("📅 Ejecutando: Seguimientos programados")
         seguimientos = await obtener_seguimientos_programados()
