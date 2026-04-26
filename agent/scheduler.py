@@ -232,7 +232,7 @@ async def task_seguimiento_unificado_loop():
             await job_seguimiento_unificado()
         except Exception as e:
             logger.error(f"Error en loop unificado: {e}", exc_info=False)
-        await asyncio.sleep(1800)  # 30 minutos
+        await asyncio.sleep(7200)  # 2 horas
 
 
 async def task_promo_domingo_loop():

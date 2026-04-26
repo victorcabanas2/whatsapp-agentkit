@@ -603,18 +603,23 @@ async def generar_respuesta(
         response = await client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1024,
-            system=system_prompt,
+            system=[{
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"}
+            }],
             messages=mensajes
         )
 
         # Extraer la respuesta
         respuesta = response.content[0].text
 
-        # Log de uso
-        logger.debug(
-            f"✓ Respuesta generada | "
-            f"Input: {response.usage.input_tokens} tokens | "
-            f"Output: {response.usage.output_tokens} tokens"
+        # Log de uso con info de caché
+        cache_hit = getattr(response.usage, 'cache_read_input_tokens', 0) or 0
+        cache_write = getattr(response.usage, 'cache_creation_input_tokens', 0) or 0
+        logger.info(
+            f"✓ Tokens | in:{response.usage.input_tokens} out:{response.usage.output_tokens} "
+            f"cache_hit:{cache_hit} cache_write:{cache_write}"
         )
 
         return respuesta
@@ -680,7 +685,7 @@ async def generar_mensaje_seguimiento_contextual(
         return None
 
     historial_texto = ""
-    for msg in historial[-20:]:
+    for msg in historial[-8:]:
         rol = "Cliente" if msg["role"] == "user" else "Belén (bot)"
         historial_texto += f"{rol}: {msg['content']}\n\n"
 
