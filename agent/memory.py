@@ -1496,11 +1496,22 @@ async def obtener_resumen_cliente(telefono: str) -> dict:
         }
 
 
+def _canon_tel(telefono: str) -> str:
+    """Normaliza teléfono a formato sin + ni espacios (595XXXXXXXXX)."""
+    return str(telefono).replace("+", "").replace(" ", "").strip()
+
+
 async def obtener_lead(telefono: str) -> Lead | None:
-    """Obtiene un lead específico por teléfono."""
+    """Obtiene un lead específico por teléfono (acepta formato con o sin +)."""
+    tel = _canon_tel(telefono)
     async with async_session() as session:
-        query = select(Lead).where(Lead.telefono == telefono)
-        result = await session.execute(query)
+        # Intentar sin + primero
+        result = await session.execute(select(Lead).where(Lead.telefono == tel))
+        lead = result.scalar_one_or_none()
+        if lead:
+            return lead
+        # Intentar con +
+        result = await session.execute(select(Lead).where(Lead.telefono == "+" + tel))
         return result.scalar_one_or_none()
 
 
@@ -1589,12 +1600,14 @@ async def marcar_alerta_vendedor(telefono: str):
 
 async def tomar_control(telefono: str) -> bool:
     """Pausa el bot para este cliente — un humano toma control."""
+    lead = await obtener_lead(telefono)
+    if not lead:
+        return False
     async with async_session() as session:
-        query = select(Lead).where(Lead.telefono == telefono)
-        result = await session.execute(query)
-        lead = result.scalar_one_or_none()
-        if lead:
-            lead.en_manos_humanas = True
+        result = await session.execute(select(Lead).where(Lead.telefono == lead.telefono))
+        lead_db = result.scalar_one_or_none()
+        if lead_db:
+            lead_db.en_manos_humanas = True
             await session.commit()
             return True
         return False
@@ -1602,12 +1615,14 @@ async def tomar_control(telefono: str) -> bool:
 
 async def liberar_control(telefono: str) -> bool:
     """Reactiva el bot para este cliente."""
+    lead = await obtener_lead(telefono)
+    if not lead:
+        return False
     async with async_session() as session:
-        query = select(Lead).where(Lead.telefono == telefono)
-        result = await session.execute(query)
-        lead = result.scalar_one_or_none()
-        if lead:
-            lead.en_manos_humanas = False
+        result = await session.execute(select(Lead).where(Lead.telefono == lead.telefono))
+        lead_db = result.scalar_one_or_none()
+        if lead_db:
+            lead_db.en_manos_humanas = False
             await session.commit()
             return True
         return False

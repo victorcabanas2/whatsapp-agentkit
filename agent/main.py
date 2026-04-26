@@ -12,6 +12,8 @@ Servidor principal del agente Belén de Rebody.
 import os
 import logging
 import asyncio
+import json
+import httpx
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, HTTPException, Cookie
@@ -85,6 +87,7 @@ IMAGEN_DATOS_BANCARIOS = "https://i.imgur.com/WYPWrdl.png"
 VENDEDOR_WHATSAPP = os.getenv("VENDEDOR_WHATSAPP", "")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 ADMIN_WHATSAPP = os.getenv("ADMIN_WHATSAPP", "+595986147509")
+CRM_SHARED_SECRET = os.getenv("CRM_SHARED_SECRET", "")
 
 # Chats silenciados (admin tomó control)
 MUTED_CHATS = set()  # {telefono1, telefono2, ...}
@@ -295,6 +298,26 @@ async def calcular_lead_score(telefono: str, mensaje_usuario: str, lead: Lead | 
     logger.debug(f"📊 Score {telefono}: {nuevo_score} ({nueva_intencion}), urgencia: {nueva_urgencia}")
 
 
+CRM_WEBHOOK_URL = os.getenv("CRM_WEBHOOK_URL", "http://localhost:3000/api/webhook")
+
+async def sincronizar_crm(nombre: str, telefono: str, notas: str = ""):
+    """Envía lead nuevo al Auto-CRM vía webhook. Siempre se llama como background task."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                CRM_WEBHOOK_URL,
+                json={
+                    "name": nombre,
+                    "phone": telefono,
+                    "source": "whatsapp",
+                    "notes": notas or "Importado desde Belén (AgentKit)",
+                },
+            )
+        logger.info(f"✓ Lead sincronizado al CRM: {telefono}")
+    except Exception as e:
+        logger.warning(f"⚠️ No se pudo sincronizar al CRM: {e}")
+
+
 async def enviar_alerta_vendedor(tipo: str, telefono: str, detalle: str = ""):
     """
     Envía alerta al vendedor vía WhatsApp.
@@ -409,18 +432,23 @@ def _combinar_mensajes(messages: list) -> object:
     return combined
 
 
+def _normalizar_telefono(tel: str) -> str:
+    """Quita +, espacios y normaliza a formato 595XXXXXXXXX."""
+    return str(tel).replace("+", "").replace(" ", "").strip()
+
+
 async def _handle_admin_command(msg) -> bool:
     """
     Procesa comandos de admin (/takeover, /release).
     Retorna True si fue un comando admin y fue manejado.
     """
-    if msg.telefono != ADMIN_WHATSAPP:
+    if _normalizar_telefono(msg.telefono) != _normalizar_telefono(ADMIN_WHATSAPP):
         return False
 
     if msg.texto.startswith("/takeover"):
         parts = msg.texto.split()
         if len(parts) > 1:
-            target = parts[1]
+            target = _normalizar_telefono(parts[1])
             from agent.memory import tomar_control
             exito = await tomar_control(target)
             if exito:
@@ -429,12 +457,14 @@ async def _handle_admin_command(msg) -> bool:
                 logger.info(f"🔇 Admin silencia chat {target}")
             else:
                 await proveedor.enviar_mensaje(msg.telefono, f"❌ No encontré el lead {target}")
+        else:
+            await proveedor.enviar_mensaje(msg.telefono, "Uso: /takeover 595XXXXXXXXX")
         return True
 
     if msg.texto.startswith("/release"):
         parts = msg.texto.split()
         if len(parts) > 1:
-            target = parts[1]
+            target = _normalizar_telefono(parts[1])
             from agent.memory import liberar_control
             exito = await liberar_control(target)
             if exito:
@@ -443,6 +473,8 @@ async def _handle_admin_command(msg) -> bool:
                 logger.info(f"🔊 Admin reactiva chat {target}")
             else:
                 await proveedor.enviar_mensaje(msg.telefono, f"❌ No encontré el lead {target}")
+        else:
+            await proveedor.enviar_mensaje(msg.telefono, "Uso: /release 595XXXXXXXXX")
         return True
 
     return False
@@ -477,7 +509,7 @@ async def lifespan(app: FastAPI):
         result = await session.execute(query)
         pausados = result.scalars().all()
         for lead in pausados:
-            MUTED_CHATS.add(lead.telefono)
+            MUTED_CHATS.add(_normalizar_telefono(lead.telefono))
         if pausados:
             logger.info(f"✓ Sincronizados {len(pausados)} chats pausados desde BD")
 
@@ -801,6 +833,8 @@ async def _procesar_mensaje_individual(msg):
                 f"{nombre} ({telefono})\nDice: '{msg.texto[:80]}...'"
             )
             await marcar_alerta_vendedor(telefono)
+            # CRM sync es independiente del flag alerta_vendedor_enviada — corre en background
+            asyncio.create_task(sincronizar_crm(nombre, telefono, f"Primer mensaje: {msg.texto[:120]}"))
 
         if (score_anterior < 50 or intencion_anterior != "hot") and lead.intencion == "hot":
             nombre = lead.nombre or telefono
@@ -2381,3 +2415,29 @@ async def sincronizar_imagenes():
             "status": "error",
             "mensaje": f"❌ Error en sincronización: {str(e)}"
         }
+
+
+@app.post("/api/crm/notify")
+async def crm_notify(request: Request):
+    """
+    Recibe alertas del Auto-CRM y las reenvía al WhatsApp del vendedor.
+    Requiere header: X-CRM-Secret igual a CRM_SHARED_SECRET.
+    Body JSON: {"message": "texto del aviso"}
+    """
+    # Autenticación: shared secret entre CRM y AgentKit
+    secret = request.headers.get("X-CRM-Secret", "")
+    if not CRM_SHARED_SECRET or secret != CRM_SHARED_SECRET:
+        return JSONResponse({"ok": False, "error": "No autorizado"}, status_code=401)
+
+    try:
+        body = await request.json()
+        message = str(body.get("message", "")).strip()
+        if not message or len(message) > 1000:
+            return JSONResponse({"ok": False, "error": "message requerido (max 1000 chars)"}, status_code=400)
+        if not VENDEDOR_WHATSAPP:
+            return JSONResponse({"ok": False, "error": "VENDEDOR_WHATSAPP no configurado"}, status_code=500)
+        exito = await proveedor.enviar_mensaje(VENDEDOR_WHATSAPP, message)
+        return {"ok": exito}
+    except Exception as e:
+        logger.error(f"Error en /api/crm/notify: {e}")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
