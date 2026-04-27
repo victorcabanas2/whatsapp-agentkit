@@ -453,6 +453,55 @@ async def obtener_contexto_stock() -> str:
         return ""
 
 
+# Palabras de producto — si aparecen, la pregunta no es una FAQ simple
+_PALABRAS_PRODUCTO = {
+    "whoop", "theragun", "jetboots", "foreo", "theraface", "wavesolo",
+    "smartgoggles", "sleepmas", "thermback", "theracup", "recovery",
+    "wand", "mask", "goggles", "mini", "sense", "prime",
+}
+
+
+def _normalizar(texto: str) -> str:
+    """Minúsculas, sin tildes, sin puntuación."""
+    t = texto.lower()
+    for a, b in [("á","a"),("é","e"),("í","i"),("ó","o"),("ú","u"),("ü","u"),("ñ","n")]:
+        t = t.replace(a, b)
+    return "".join(c if c.isalnum() or c == " " else " " for c in t)
+
+
+def _detectar_faq(mensaje: str) -> str | None:
+    """
+    Detecta FAQs de primer contacto y retorna respuesta pre-escrita.
+    Solo para mensajes cortos sin mención de productos específicos.
+    """
+    norm = _normalizar(mensaje)
+    words = set(norm.split())
+
+    # Si menciona un producto específico, Claude lo maneja mejor
+    if words & _PALABRAS_PRODUCTO:
+        return None
+
+    # Delivery
+    if "delivery" in words or ("hacen" in words and "envio" in words) or ("mandan" in words):
+        return "¡Sí hacemos delivery! 😊 Para coordinar necesito: nombre, dirección y nro de contacto. ¿Lo armamos?"
+
+    # Dirección / local
+    if (("donde" in words or "ubican" in words or "ubicacion" in words) and ("estan" in words or "esta" in words)) \
+            or ("direccion" in words and len(words) <= 5) \
+            or ({"tienen", "local"} <= words and len(words) <= 6):
+        return "Estamos en Dr. Luis Morquio 447 (Solumedic S.A.), Asunción — barrio Pinoza, cerca del Shopping Asia 📍"
+
+    # Datos bancarios / transferencia
+    if ("datos" in words or "cuenta" in words) and ("transferencia" in words or "banco" in words or "pago" in words):
+        return "Cuenta: 6192826751 | Banco UENO | RUC: 80023913-0 | Empresa: SOLUMEDIC S.A. 💳"
+
+    # Cuotas
+    if "cuotas" in words and len(words) <= 8:
+        return "¡Sí! UENO: 12 cuotas sin interés, Banco Familiar: 12 cuotas sin interés, Banco Itaú: 6 cuotas sin interés 😊 ¿Con qué banco pagás?"
+
+    return None
+
+
 async def generar_respuesta(
     mensaje: str,
     historial: list[dict],
@@ -484,6 +533,14 @@ async def generar_respuesta(
         logger.info(f"⚡ Saludo sin historial — respuesta pre-escrita (sin llamar a Claude)")
         return "Hola, soy Belén, la agente de Rebody 😊 ¿En qué te puedo ayudar?"
 
+    # FAQs de primer contacto: respuestas pre-escritas para preguntas frecuentes muy simples
+    # Solo aplica cuando: sin historial, sin imagen, sin contexto de anuncio, mensaje corto
+    if not historial and not imagen_url and not contexto_adicional and len(mensaje) < 80:
+        faq = _detectar_faq(mensaje)
+        if faq:
+            logger.info(f"⚡ FAQ detectada — respuesta pre-escrita (sin llamar a Claude)")
+            return faq
+
     # Cargar system prompt
     system_prompt = cargar_system_prompt()
     if not system_prompt:
@@ -514,7 +571,7 @@ async def generar_respuesta(
     # PROCESAR HISTORIAL — Extraer imágenes si existen
     # ═══════════════════════════════════════════════════════════
 
-    for msg in historial[-10:]:
+    for msg in historial[-8:]:
         msg_role = msg.get("role", "user")
         msg_content = msg.get("content", "")
 

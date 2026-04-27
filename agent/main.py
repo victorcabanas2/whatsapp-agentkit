@@ -606,7 +606,7 @@ async def _procesar_mensaje_individual(msg):
         await actualizar_ultimo_mensaje_usuario(telefono)
 
         # Historial
-        historial = await obtener_historial(telefono, limite=100)
+        historial = await obtener_historial(telefono, limite=20)
         logger.info(f"✓ Historial cargado: {len(historial)} mensajes")
 
         # ── CONTEXTUALIZACIÓN: Anuncios + Replies ──────────
