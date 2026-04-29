@@ -320,6 +320,47 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 texto = f"[Documento enviado: {doc_name}]"
                 logger.debug(f"Documento recibido de {telefono}")
 
+            # TIPO 10: Ubicación compartida (pin de Google Maps o ubicación nativa de WhatsApp)
+            elif tipo_msg == "location":
+                location = msg.get("location", {})
+                address = (location.get("address") or "").strip()
+                place_name = (location.get("name") or "").strip()
+                lat = location.get("latitude", "")
+                lon = location.get("longitude", "")
+                url = (location.get("url") or "").strip()
+
+                if place_name and address:
+                    texto = f"[Ubicación: {place_name} - {address}]"
+                elif address:
+                    texto = f"[Ubicación: {address}]"
+                elif place_name:
+                    texto = f"[Ubicación: {place_name}]"
+                elif url:
+                    texto = f"[Ubicación: {url}]"
+                else:
+                    texto = f"[Ubicación compartida (lat: {lat}, lon: {lon})]"
+                logger.info(f"📍 Ubicación recibida de {telefono}: {texto}")
+
+            # TIPO 11: Contacto compartido (cuando el cliente comparte un contacto de WhatsApp)
+            elif tipo_msg == "contacts":
+                contactos = msg.get("contacts", [])
+                if contactos:
+                    contact = contactos[0]
+                    nombre_contacto = (contact.get("name", {}).get("formatted_name") or "").strip()
+                    phones = contact.get("phones", [])
+                    numero_contacto = (phones[0].get("phone") or "").strip() if phones else ""
+                    if nombre_contacto and numero_contacto:
+                        texto = f"[Contacto compartido: {nombre_contacto} - {numero_contacto}]"
+                    elif nombre_contacto:
+                        texto = f"[Contacto compartido: {nombre_contacto}]"
+                    elif numero_contacto:
+                        texto = f"[Contacto compartido: {numero_contacto}]"
+                    else:
+                        texto = "[Contacto compartido]"
+                    logger.info(f"👤 Contacto recibido de {telefono}: {texto}")
+                else:
+                    texto = "[Contacto compartido]"
+
             else:
                 logger.warning(f"⚠️ Tipo de mensaje no reconocido: {tipo_msg}")
                 continue
