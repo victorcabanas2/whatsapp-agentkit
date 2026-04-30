@@ -13,7 +13,9 @@ from fastapi.responses import HTMLResponse, JSONResponse
 logger = logging.getLogger("stock_panel")
 
 router = APIRouter()
-STOCK_FILE = "knowledge/stock_actual.json"
+# Path absoluto: sube un nivel desde agent/ para llegar a la raíz del proyecto
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STOCK_FILE = os.path.join(_BASE_DIR, "knowledge", "stock_actual.json")
 
 
 def load_stock():
