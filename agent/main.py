@@ -10,14 +10,15 @@ Servidor principal del agente Belén de Rebody.
 """
 
 import os
+import secrets
 import logging
 import asyncio
 import json
 import httpx
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Request, HTTPException, Cookie
-from fastapi.responses import PlainTextResponse, JSONResponse, HTMLResponse
+from fastapi import FastAPI, Request, HTTPException, Cookie, Depends
+from fastapi.responses import PlainTextResponse, JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from sqlalchemy import select, desc, func
@@ -88,6 +89,16 @@ VENDEDOR_WHATSAPP = os.getenv("VENDEDOR_WHATSAPP", "")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 ADMIN_WHATSAPP = os.getenv("ADMIN_WHATSAPP", "+595986147509")
 CRM_SHARED_SECRET = os.getenv("CRM_SHARED_SECRET", "")
+
+# Session store — tokens válidos de admin (en memoria, válidos hasta restart)
+ADMIN_SESSIONS: set[str] = set()
+
+
+def require_admin_session(request: Request):
+    """Dependency FastAPI: valida cookie de sesión admin en todos los /api/admin/* endpoints."""
+    token = request.cookies.get("admin_session")
+    if not token or token not in ADMIN_SESSIONS:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 # Chats silenciados (admin tomó control)
 MUTED_CHATS = set()  # {telefono1, telefono2, ...}
@@ -556,6 +567,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def admin_auth_middleware(request: Request, call_next):
+    """Protege todos los endpoints /api/admin/* con autenticación por sesión cookie."""
+    if request.url.path.startswith("/api/admin/"):
+        token = request.cookies.get("admin_session")
+        if not token or token not in ADMIN_SESSIONS:
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+    return await call_next(request)
+
 
 # Agregar routers
 app.include_router(stock_router)
@@ -1121,11 +1143,13 @@ async def obtener_pedidos(telefono: str):
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/debug/shopify")
-async def debug_shopify():
-    """
-    Endpoint de debug para verificar conexión con Shopify.
-    Intenta obtener stock de los primeros productos.
-    """
+async def debug_shopify(request: Request):
+    """Debug: verificar conexión con Shopify. Solo disponible fuera de producción."""
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=404)
+    token = request.cookies.get("admin_session")
+    if not token or token not in ADMIN_SESSIONS:
+        raise HTTPException(status_code=403, detail="Forbidden")
     from agent.shopify import (
         obtener_credenciales_shopify,
         cargar_config_shopify,
@@ -1157,11 +1181,13 @@ async def debug_shopify():
 
 
 @app.get("/debug/shopify/test/{product_id}")
-async def debug_shopify_test(product_id: str):
-    """
-    Testa obtener stock de un producto específico.
-    Ej: /debug/shopify/test/9157820449026
-    """
+async def debug_shopify_test(product_id: str, request: Request):
+    """Debug: stock de un producto. Solo disponible fuera de producción."""
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=404)
+    token = request.cookies.get("admin_session")
+    if not token or token not in ADMIN_SESSIONS:
+        raise HTTPException(status_code=403, detail="Forbidden")
     from agent.shopify import obtener_stock_producto
 
     try:
@@ -1204,20 +1230,16 @@ def get_login_html():
 <body>
     <div class="login-container">
         <h1>🔒 Acceso Admin</h1>
-        <form onsubmit="login(event)">
+        <form method="POST" action="/admin/login">
             <div class="form-group">
                 <label>Contraseña</label>
-                <input type="password" id="pwd" placeholder="Ingresa la contraseña" required>
+                <input type="password" name="password" placeholder="Ingresa la contraseña" required>
             </div>
             <button type="submit" class="btn">Acceder</button>
         </form>
     </div>
     <script>
-        function login(e) {
-            e.preventDefault();
-            const pwd = document.getElementById('pwd').value;
-            window.location.href = '/admin?pwd=' + encodeURIComponent(pwd);
-        }
+        // Login via POST — la contraseña nunca va en la URL ni en logs
     </script>
 </body>
 </html>"""
@@ -1747,13 +1769,46 @@ contact_info    message_content    message_timestamp    profile_image
 
 
 @app.get("/admin")
-async def admin_dashboard(pwd: str = ""):
-    """Retorna dashboard HTML con autenticación por password."""
-    # Verificar password
-    if pwd != ADMIN_PASSWORD:
+async def admin_dashboard(request: Request):
+    """Retorna dashboard HTML — requiere sesión cookie válida."""
+    token = request.cookies.get("admin_session")
+    if not token or token not in ADMIN_SESSIONS:
         return HTMLResponse(get_login_html())
-
     return HTMLResponse(get_dashboard_html())
+
+
+@app.post("/admin/login")
+async def admin_login(request: Request):
+    """Autentica al admin con contraseña via POST form. Nunca en query string."""
+    from fastapi import Form
+    form = await request.form()
+    password = form.get("password", "")
+    if not secrets.compare_digest(str(password), ADMIN_PASSWORD):
+        logger.warning(f"Admin login failed from {request.client.host}")
+        return HTMLResponse(get_login_html(), status_code=401)
+    session_token = secrets.token_urlsafe(32)
+    ADMIN_SESSIONS.add(session_token)
+    logger.info(f"Admin login success from {request.client.host}")
+    response = RedirectResponse("/admin", status_code=303)
+    response.set_cookie(
+        "admin_session", session_token,
+        httponly=True,
+        secure=(ENVIRONMENT == "production"),
+        samesite="lax",
+        max_age=3600,
+    )
+    return response
+
+
+@app.post("/admin/logout")
+async def admin_logout(request: Request):
+    """Invalida la sesión admin actual."""
+    token = request.cookies.get("admin_session")
+    if token:
+        ADMIN_SESSIONS.discard(token)
+    response = RedirectResponse("/admin", status_code=303)
+    response.delete_cookie("admin_session")
+    return response
 
 
 @app.get("/api/admin/stats")
