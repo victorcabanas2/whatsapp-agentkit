@@ -90,10 +90,13 @@ async def sync_all_products():
             product_id = result.get("id")
             stock_data["productos"][product_id] = result
     
-    # Guardar a archivo
+    if not stock_data["productos"]:
+        logger.error("❌ Shopify devolvió 0 productos — no se sobreescribe stock_actual.json para preservar datos")
+        return
+
     with open(STOCK_OUTPUT_PATH, "w", encoding="utf-8") as f:
         json.dump(stock_data, f, indent=2, ensure_ascii=False)
-    
+
     logger.info(f"Stock sincronizado: {len(stock_data['productos'])} productos")
 
 

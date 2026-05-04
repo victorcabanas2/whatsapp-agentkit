@@ -11,6 +11,7 @@ agentkit.db
 agentkit_memory.log
 knowledge/*
 !knowledge/.gitkeep
+!knowledge/*.json
 __pycache__
 *.pyc
 *.pyo
