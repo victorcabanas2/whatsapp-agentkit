@@ -28,28 +28,42 @@ client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 _TOOL_WEB = [{
     "name": "buscar_specs_producto",
     "description": (
-        "Busca especificaciones técnicas de un producto en el sitio web oficial de la marca. "
-        "Usar SOLO cuando el cliente pregunta detalles técnicos (modos, temperaturas, materiales, "
-        "compatibilidades, dimensiones, batería, etc.) que no están documentados en el sistema prompt. "
-        "Dominios permitidos: therabody.com, whoop.com, foreo.com. "
-        "NUNCA usar para precios, garantías, stock ni info comercial — eso viene del sistema prompt."
+        "Busca especificaciones técnicas en el sitio oficial de la marca (therabody.com, whoop.com, foreo.com). "
+        "Usar solo para detalles técnicos (modos, temperaturas, materiales, dimensiones, batería) "
+        "no documentados en el prompt. Nunca para precios, stock ni garantías."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "url": {
                 "type": "string",
-                "description": (
-                    "URL exacta del producto en su sitio oficial. "
-                    "Ejemplos: https://www.therabody.com/us/en/recovery/thermotherapy/recovery-thermcube/RTC.html, "
-                    "https://www.whoop.com/thelocker/whoop-5-0/, "
-                    "https://www.foreo.com/product/faq-211/"
-                )
+                "description": "URL del producto en therabody.com, whoop.com o foreo.com"
             }
         },
         "required": ["url"]
     }
 }]
+
+# Keywords que indican pregunta técnica — solo en estos casos se pasa el tool a Claude
+_KEYWORDS_SPECS = {
+    "como funciona", "cómo funciona", "que hace", "qué hace",
+    "para que sirve", "para qué sirve", "como se usa", "cómo se usa",
+    "especificaciones", "especificacion", "caracteristicas", "características",
+    "modos", "temperatura", "bateria", "batería", "autonomia", "autonomía",
+    "dimensiones", "medidas", "peso", "tamaño", "tamano",
+    "compatible", "compatibilidad", "materiales", "material",
+    "diferencia entre", "diferencias", "que incluye", "qué incluye",
+    "frecuencia", "intensidad", "niveles", "ajustes", "configuracion",
+    "detalles tecnicos", "detalles técnicos", "specs", "ficha tecnica",
+    "waterproof", "resistente", "agua", "ip68", "ip67",
+    "sensores", "sensor", "algoritmo", "precision", "precisión",
+}
+
+
+def _necesita_tool_web(mensaje: str) -> bool:
+    """Retorna True solo si el mensaje contiene una pregunta técnica sobre specs."""
+    msg = mensaje.lower()
+    return any(kw in msg for kw in _KEYWORDS_SPECS)
 
 
 def cargar_config_prompts() -> dict:
@@ -663,12 +677,15 @@ async def generar_respuesta(
             "cache_control": {"type": "ephemeral"}
         }]
 
+        usar_tool = _necesita_tool_web(mensaje)
+        kwargs = {"tools": _TOOL_WEB} if usar_tool else {}
+
         response = await client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1024,
-            tools=_TOOL_WEB,
             system=sistema,
-            messages=mensajes
+            messages=mensajes,
+            **kwargs
         )
 
         # Manejar tool use si Claude solicita buscar specs en la web
@@ -693,9 +710,9 @@ async def generar_respuesta(
                 response = await client.messages.create(
                     model="claude-sonnet-4-6",
                     max_tokens=1024,
-                    tools=_TOOL_WEB,
                     system=sistema,
-                    messages=mensajes
+                    messages=mensajes,
+                    **kwargs
                 )
 
         # Extraer texto de la respuesta
