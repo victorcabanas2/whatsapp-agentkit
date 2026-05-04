@@ -16,12 +16,40 @@ from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
 from agent.shopify import obtener_stock_producto, obtener_stocks_multiples, cargar_config_shopify
 from agent.memory import programar_seguimiento_dinamico
+from agent.web_search import scrape_specs
 
 load_dotenv()
 logger = logging.getLogger("agentkit")
 
 # Cliente de Anthropic
 client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+# Herramienta de búsqueda de specs en sitios oficiales
+_TOOL_WEB = [{
+    "name": "buscar_specs_producto",
+    "description": (
+        "Busca especificaciones técnicas de un producto en el sitio web oficial de la marca. "
+        "Usar SOLO cuando el cliente pregunta detalles técnicos (modos, temperaturas, materiales, "
+        "compatibilidades, dimensiones, batería, etc.) que no están documentados en el sistema prompt. "
+        "Dominios permitidos: therabody.com, whoop.com, foreo.com. "
+        "NUNCA usar para precios, garantías, stock ni info comercial — eso viene del sistema prompt."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": (
+                    "URL exacta del producto en su sitio oficial. "
+                    "Ejemplos: https://www.therabody.com/us/en/recovery/thermotherapy/recovery-thermcube/RTC.html, "
+                    "https://www.whoop.com/thelocker/whoop-5-0/, "
+                    "https://www.foreo.com/product/faq-211/"
+                )
+            }
+        },
+        "required": ["url"]
+    }
+}]
 
 
 def cargar_config_prompts() -> dict:
@@ -629,19 +657,56 @@ async def generar_respuesta(
     try:
         logger.debug(f"Llamando a Claude con {len(mensajes)} mensajes en contexto (imagen: {'sí' if imagen_url else 'no'})")
 
+        sistema = [{
+            "type": "text",
+            "text": system_prompt,
+            "cache_control": {"type": "ephemeral"}
+        }]
+
         response = await client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1024,
-            system=[{
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"}
-            }],
+            tools=_TOOL_WEB,
+            system=sistema,
             messages=mensajes
         )
 
-        # Extraer la respuesta
-        respuesta = response.content[0].text
+        # Manejar tool use si Claude solicita buscar specs en la web
+        if response.stop_reason == "tool_use":
+            tool_results = []
+
+            for block in response.content:
+                if block.type == "tool_use" and block.name == "buscar_specs_producto":
+                    url = block.input.get("url", "")
+                    logger.info(f"🔍 Buscando specs en: {url[:70]}")
+                    resultado = await scrape_specs(url)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": resultado
+                    })
+
+            if tool_results:
+                mensajes.append({"role": "assistant", "content": response.content})
+                mensajes.append({"role": "user", "content": tool_results})
+
+                response = await client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=1024,
+                    tools=_TOOL_WEB,
+                    system=sistema,
+                    messages=mensajes
+                )
+
+        # Extraer texto de la respuesta
+        respuesta = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                respuesta = block.text
+                break
+
+        if not respuesta:
+            return obtener_mensaje_error()
 
         # Log de uso con info de caché
         cache_hit = getattr(response.usage, 'cache_read_input_tokens', 0) or 0
