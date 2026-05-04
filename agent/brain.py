@@ -513,25 +513,51 @@ def _normalizar(texto: str) -> str:
 
 def _detectar_faq(mensaje: str) -> str | None:
     """
-    Detecta FAQs de primer contacto y retorna respuesta pre-escrita.
-    Solo para mensajes cortos sin mención de productos específicos.
+    Detecta FAQs frecuentes y retorna respuesta pre-escrita sin llamar a Claude.
+    Solo aplica cuando no hay historial, imagen ni contexto de anuncio.
     """
     norm = _normalizar(mensaje)
     words = set(norm.split())
 
-    # Si menciona un producto específico, Claude lo maneja mejor
+    MAPS = "https://maps.google.com/?q=-25.3078779,-57.6107114"
+    HORARIO = "de lunes a viernes de 8:00 a 18:00 y sábados de 8:00 a 12:00 😊 Domingos y feriados cerramos."
+    UBICACION = f"Dr. Luis Morquio 447, Asunción — barrio Pinoza, cerca del Shopping Asia 😊 {MAPS}"
+    PAGO_DELIVERY = "transferencia bancaria, link de pago (cuotas sin interés con UENO Bank y Familiar) y QR Pik (cuotas sin interés con Itaú)"
+
+    # Si menciona producto específico, Claude lo maneja mejor
     if words & _PALABRAS_PRODUCTO:
         return None
 
-    # Delivery
-    if "delivery" in words or ("hacen" in words and "envio" in words) or ("mandan" in words):
+    # Horario de atención
+    if any(x in norm for x in ["horario", "que hora", "a que hora", "hasta que hora", "atienden", "abren", "cierran"]):
+        return f"Estamos {HORARIO}"
+
+    # Tiempo de delivery
+    if any(x in norm for x in ["cuanto tarda", "cuanto demora", "cuando llega", "tiempo de entrega", "tiempo de envio"]):
+        return "Depende del stock y el horario en que confirmás el pedido 😊 Si es en Asunción, generalmente llega el mismo día o al día siguiente. Para el interior del país, entre 24 y 48 horas. ¿Sos de Asunción o del interior?"
+
+    # Costo de delivery
+    if any(x in norm for x in ["cuanto cuesta el envio", "costo de envio", "costo del envio", "precio del envio", "precio de envio", "costo de delivery", "cuanto sale el envio", "cuanto es el envio", "cuanto cobra"]):
+        return "El costo del envío depende de tu ubicación 😊 Asunción: Gs. 20.000 / Gran Asunción: Gs. 35.000 / Interior del país: Gs. 50.000. ¿De qué zona sos?"
+
+    # Delivery genérico
+    if "delivery" in words or ("hacen" in words and "envio" in words) or "mandan" in words or ("hacen" in words and "envios" in words):
         return "¡Sí hacemos delivery! 😊 Para coordinar necesito: nombre, dirección y nro de contacto. ¿Lo armamos?"
 
-    # Dirección / local
+    # Envíos internacionales
+    if any(x in norm for x in ["argentina", "brasil", "chile", "uruguay", "bolivia", "exterior", "internacional", "otro pais", "afuera del pais"]):
+        return "¡Sí, enviamos al exterior! 😊 Para coordinar el envío internacional escribinos al +595 993 233 333 así te damos los detalles."
+
+    # Envíos a todo el país
+    if any(x in norm for x in ["todo el pais", "todo paraguay", "cualquier ciudad", "todo el interior"]):
+        return "¡Sí, enviamos a todo el país! 😊 ¿De qué ciudad sos?"
+
+    # Dirección / local físico / retiro
     if (("donde" in words or "ubican" in words or "ubicacion" in words) and ("estan" in words or "esta" in words)) \
             or ("direccion" in words and len(words) <= 5) \
-            or ({"tienen", "local"} <= words and len(words) <= 6):
-        return "Estamos en Dr. Luis Morquio 447 (Solumedic S.A.), Asunción — barrio Pinoza, cerca del Shopping Asia 📍"
+            or ({"tienen", "local"} <= words and len(words) <= 6) \
+            or any(x in norm for x in ["local fisico", "pasar a buscar", "pasar a retirar", "ir a buscar", "retirar en"]):
+        return f"¡Sí! Podés pasar por {UBICACION} Estamos {HORARIO}"
 
     # Datos bancarios / transferencia
     if ("datos" in words or "cuenta" in words) and ("transferencia" in words or "banco" in words or "pago" in words):
@@ -539,7 +565,39 @@ def _detectar_faq(mensaje: str) -> str | None:
 
     # Cuotas
     if "cuotas" in words and len(words) <= 8:
-        return "¡Sí! UENO: 12 cuotas sin interés, Banco Familiar: 12 cuotas sin interés, Banco Itaú: 6 cuotas sin interés 😊 ¿Con qué banco pagás?"
+        return "¡Sí! UENO Bank: 12 cuotas sin interés, Banco Familiar: 12 cuotas sin interés, Banco Itaú: 6 cuotas sin interés 😊 ¿Con qué banco pagás?"
+
+    # Pago en efectivo
+    if "efectivo" in words:
+        return f"Efectivo sí, pero solo si pasás por el local 😊 Para delivery manejamos {PAGO_DELIVERY}. ¿Cómo preferís pagar?"
+
+    # Pago con tarjeta
+    if any(x in norm for x in ["tarjeta", "tarjeta de credito", "tarjeta credito", "debito", "tarjeta de debito", "pos"]):
+        return f"¡Sí! Si pasás por el local pagás con POS 😊 Para delivery manejamos {PAGO_DELIVERY}. ¿Cómo preferís pagar?"
+
+    # Factura
+    if any(x in norm for x in ["factura", "facturacion", "facturan", "emiten factura"]):
+        return "¡Sí, emitimos factura electrónica! 😊 Si la necesitás, al momento del pedido me pasás tu RUC y correo para el envío!"
+
+    # Garantía
+    if any(x in norm for x in ["garantia", "garantias"]):
+        return "¡Sí! Todos los productos tienen 1 año de garantía por defectos o malfuncionamiento de fábrica 😊 ¿Hay algo más en lo que te pueda ayudar?"
+
+    # Cambios y devoluciones
+    if any(x in norm for x in ["cambio", "devolucion", "cambios", "devolver", "devuelven", "cambian", "retorno"]):
+        return "Cambios no realizamos una vez abierta la caja o con indicios de uso 😊 Devoluciones sí, siempre que sea por defecto o mal funcionamiento de fábrica. ¿Tenés algún inconveniente con un producto?"
+
+    # Originales / autenticidad
+    if any(x in norm for x in ["original", "originales", "falso", "copia", "autentico", "son verdaderos"]):
+        return "¡Sí, todos son 100% originales! 😊 Somos distribuidores oficiales de todas las marcas que manejamos."
+
+    # Productos de segunda mano / reacondicionados
+    if any(x in norm for x in ["segunda mano", "reacondicionado", "usado", "usados", "refurbished"]):
+        return "Solo manejamos productos nuevos y originales 😊 ¿Hay alguno en particular que te interese?"
+
+    # Reserva
+    if any(x in norm for x in ["reservar", "reserva", "apartar", "separar el producto"]):
+        return "¡Sí podés reservarlo con una seña del 10% del valor del producto! 😊 Para coordinar necesito tu nombre, el producto que querés reservar y un número de contacto. ¿Te armamos la reserva?"
 
     return None
 
@@ -577,7 +635,7 @@ async def generar_respuesta(
 
     # FAQs de primer contacto: respuestas pre-escritas para preguntas frecuentes muy simples
     # Solo aplica cuando: sin historial, sin imagen, sin contexto de anuncio, mensaje corto
-    if not historial and not imagen_url and not contexto_adicional and len(mensaje) < 80:
+    if not historial and not imagen_url and not contexto_adicional and len(mensaje) < 120:
         faq = _detectar_faq(mensaje)
         if faq:
             logger.info(f"⚡ FAQ detectada — respuesta pre-escrita (sin llamar a Claude)")
