@@ -467,8 +467,29 @@ def _combinar_mensajes(messages: list) -> object:
 
 
 def _normalizar_telefono(tel: str) -> str:
-    """Quita +, espacios y normaliza a formato 595XXXXXXXXX."""
-    return str(tel).replace("+", "").replace(" ", "").strip()
+    """Quita +, espacios, guiones, sufijo @JID de WhatsApp y normaliza a 595XXXXXXXXX."""
+    n = str(tel).replace("+", "").replace(" ", "").replace("-", "").strip()
+    if "@" in n:
+        n = n.split("@")[0]  # Quita sufijos como @s.whatsapp.net, @c.us
+    return n
+
+
+def _es_admin(telefono: str, es_propio: bool = False) -> bool:
+    """
+    Verifica si un número es el del admin usando múltiples estrategias de comparación.
+    Soporta diferentes formatos de número que puede enviar Whapi.
+    """
+    if es_propio:
+        return True
+    n = _normalizar_telefono(telefono)
+    admin = _normalizar_telefono(ADMIN_WHATSAPP)
+    # Comparación exacta
+    if n == admin:
+        return True
+    # Fallback: últimos 9 dígitos (por diferencias en código de país u otros prefijos)
+    if len(n) >= 9 and len(admin) >= 9 and n[-9:] == admin[-9:]:
+        return True
+    return False
 
 
 async def _handle_admin_command(msg) -> bool:
@@ -479,12 +500,9 @@ async def _handle_admin_command(msg) -> bool:
     """
     global BOT_GLOBAL_PAUSADO
 
-    # Verificar que quien escribe es el admin, sin importar desde qué número llega
     numero_remitente = _normalizar_telefono(msg.telefono)
     numero_admin = _normalizar_telefono(ADMIN_WHATSAPP)
-
-    # Si el mensaje es "propio" (desde el número del bot), el remitente es el admin por definición
-    es_admin = msg.es_propio or (numero_remitente == numero_admin)
+    es_admin = _es_admin(msg.telefono, msg.es_propio)
 
     texto = msg.texto.strip() if msg.texto else ""
     logger.info(f"🔑 CMD CHECK | remitente={numero_remitente} | admin={numero_admin} | es_propio={msg.es_propio} | es_admin={es_admin} | texto='{texto[:60]}'")
@@ -849,9 +867,8 @@ async def _procesar_mensaje_individual(msg):
         return
 
     # ── FIREWALL: comandos admin que pasaron el buffer ──────
-    # Doble check por si _handle_admin_command no los interceptó en el webhook
-    if msg.texto.strip().startswith("/") and _normalizar_telefono(telefono) == _normalizar_telefono(ADMIN_WHATSAPP):
-        logger.warning(f"⚠️ Comando admin llegó al procesador (debería haberse interceptado antes): {msg.texto[:60]}")
+    if msg.texto.strip().startswith("/") and _es_admin(telefono, getattr(msg, "es_propio", False)):
+        logger.warning(f"⚠️ Comando admin llegó al procesador: {msg.texto[:60]}")
         await _handle_admin_command(msg)
         return
 
@@ -1053,6 +1070,10 @@ async def _procesar_mensaje_individual(msg):
             imagen_url=msg.imagen_url,
             contexto_adicional="\n".join(contexto_sistema) if contexto_sistema else None
         )
+
+        if respuesta_raw is None:
+            logger.warning(f"⚠️ generar_respuesta retornó None para {telefono} (comando / interceptado en brain) — abortando")
+            return
 
         from agent.brain import extraer_imagen_de_respuesta, obtener_url_imagen, detectar_y_programar_seguimiento
         respuesta_limpia, product_id = extraer_imagen_de_respuesta(respuesta_raw)

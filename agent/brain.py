@@ -604,6 +604,11 @@ async def generar_respuesta(
     if (not mensaje or len(mensaje.strip()) < 2) and not imagen_url:
         return obtener_mensaje_fallback()
 
+    # Guard: mensajes que empiezan con "/" son comandos admin — nunca deben llegar a Claude
+    if mensaje.strip().startswith("/"):
+        logger.warning(f"⚠️ brain.py recibió un comando admin '{mensaje[:40]}' — ignorando (debería haberse interceptado antes)")
+        return None
+
     # Saludos simples sin historial: respuesta pre-escrita sin llamar a Claude
     # Solo aplica en primer contacto (sin historial) — con historial Claude necesita contexto
     SALUDOS = {"hola", "holis", "hi", "hey", "buenas", "buen dia", "buen día",
