@@ -351,6 +351,7 @@ async def enviar_alerta_vendedor(tipo: str, telefono: str, detalle: str = ""):
             "nuevo_lead":      "🆕 *NUEVO LEAD*",
             "hot_lead":        "🔥 *LEAD CALIENTE*",
             "pago_confirmado": "✅ *PAGO CONFIRMADO*",
+            "pedido_agendado": "📦 *PEDIDO AGENDADO*",
             "sin_respuesta":   "⏰ *SIN RESPUESTA +4h*",
             "error_critico":   "🚨 *ERROR CRÍTICO*",
         }
@@ -360,6 +361,7 @@ async def enviar_alerta_vendedor(tipo: str, telefono: str, detalle: str = ""):
             "nuevo_lead":      f"/status {tel_normalizado}\n/takeover {tel_normalizado}",
             "hot_lead":        f"/status {tel_normalizado}\n/takeover {tel_normalizado}",
             "pago_confirmado": f"/status {tel_normalizado}",
+            "pedido_agendado": f"/status {tel_normalizado}",
             "sin_respuesta":   f"/status {tel_normalizado}\n/takeover {tel_normalizado}",
             "error_critico":   "",
         }
@@ -1303,6 +1305,17 @@ async def crear_pedido(request: Request):
         )
 
         logger.info(f"✅ Pedido guardado (atómico): {pedido}")
+
+        nombre = data.get("nombre_cliente") or data.get("telefono", "")
+        producto = data.get("producto", "—")
+        precio = data.get("precio", "—")
+        metodo = data.get("metodo_pago", "—")
+        ciudad = data.get("ciudad_departamento", "")
+        asyncio.create_task(enviar_alerta_vendedor(
+            "pedido_agendado",
+            data.get("telefono", ""),
+            f"Cliente: {nombre}\nProducto: {producto}\nPrecio: {precio} Gs\nPago: {metodo}\nCiudad: {ciudad}\nPedido #{pedido.id}"
+        ))
 
         return {
             "status": "ok",
