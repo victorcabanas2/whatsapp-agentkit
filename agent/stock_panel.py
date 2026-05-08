@@ -20,6 +20,7 @@ router = APIRouter()
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STOCK_FILE = os.path.join(_BASE_DIR, "knowledge", "stock_actual.json")
 CONSIG_FILE = os.path.join(_BASE_DIR, "knowledge", "consignacion.json")
+MOVIMIENTOS_FILE = os.path.join(_BASE_DIR, "knowledge", "movimientos.json")
 
 
 # ── Pydantic models para consignacion ──
@@ -42,6 +43,16 @@ class ProductoUpdate(BaseModel):
     nombre: Optional[str] = None
     stock: Optional[int] = None
     notas: Optional[str] = None
+
+
+class MovimientoCreate(BaseModel):
+    tipo: str  # "venta" | "reposicion" | "retiro" | "ajuste"
+    producto: str
+    cantidad: int
+    ubicacion: str = "Solumedic"
+    precio_venta: float = 0.0
+    notas: str = ""
+    fecha: str = ""  # ISO date string; si vacío usa now()
 
 
 # ── Consignacion helpers ──
@@ -269,6 +280,78 @@ async def eliminar_producto(store_id: str, prod_id: str):
     if len(tienda["productos"]) == original:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     save_consig(data)
+    return {"status": "ok"}
+
+
+# ── Movimientos helpers ──
+
+def load_movimientos():
+    if not os.path.exists(MOVIMIENTOS_FILE):
+        return {"movimientos": [], "ultima_actualizacion": datetime.now().isoformat()}
+    try:
+        with open(MOVIMIENTOS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error leyendo movimientos: {e}")
+        return {"movimientos": [], "ultima_actualizacion": datetime.now().isoformat()}
+
+
+def save_movimientos(data):
+    try:
+        data["ultima_actualizacion"] = datetime.now().isoformat()
+        with open(MOVIMIENTOS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Error guardando movimientos: {e}")
+        raise
+
+
+@router.get("/api/movimientos")
+async def get_movimientos(tipo: str = "", desde: str = "", hasta: str = "", producto: str = ""):
+    data = load_movimientos()
+    movs = data.get("movimientos", [])
+    if tipo:
+        movs = [m for m in movs if m.get("tipo") == tipo]
+    if desde:
+        movs = [m for m in movs if m.get("fecha", "") >= desde]
+    if hasta:
+        movs = [m for m in movs if m.get("fecha", "") <= hasta + "T23:59:59"]
+    if producto:
+        q = producto.lower()
+        movs = [m for m in movs if q in m.get("producto", "").lower()]
+    return {"movimientos": movs, "ultima_actualizacion": data.get("ultima_actualizacion", "")}
+
+
+@router.post("/api/movimientos")
+async def crear_movimiento(body: MovimientoCreate):
+    if body.tipo not in ("venta", "reposicion", "retiro", "ajuste"):
+        raise HTTPException(status_code=400, detail="Tipo invalido")
+    if body.cantidad < 1:
+        raise HTTPException(status_code=400, detail="Cantidad debe ser >= 1")
+    data = load_movimientos()
+    nuevo = {
+        "id": uuid.uuid4().hex[:8],
+        "tipo": body.tipo,
+        "producto": body.producto.strip(),
+        "cantidad": body.cantidad,
+        "ubicacion": body.ubicacion or "Solumedic",
+        "precio_venta": body.precio_venta,
+        "notas": body.notas or "",
+        "fecha": body.fecha if body.fecha else datetime.now().isoformat(),
+    }
+    data["movimientos"].insert(0, nuevo)
+    save_movimientos(data)
+    return {"status": "ok", "movimiento": nuevo}
+
+
+@router.delete("/api/movimientos/{mov_id}")
+async def eliminar_movimiento(mov_id: str):
+    data = load_movimientos()
+    original = len(data["movimientos"])
+    data["movimientos"] = [m for m in data["movimientos"] if m.get("id") != mov_id]
+    if len(data["movimientos"]) == original:
+        raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+    save_movimientos(data)
     return {"status": "ok"}
 
 
@@ -530,10 +613,10 @@ async def panel_stock():
     }
     .category-section.open .table-wrap { display: block; }
 
-    table { width: 100%; border-collapse: collapse; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
     thead th {
-      background: #F5F3FF;
-      font-size: .75rem;
+      background: var(--purple-bg);
+      font-size: .72rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: .06em;
@@ -542,15 +625,16 @@ async def panel_stock():
       text-align: left;
       border-bottom: 1px solid var(--border);
     }
-    thead th.th-stock { text-align: center; }
-    thead th.th-actions { text-align: center; }
+    thead th.th-stock  { text-align: center; width: 110px; }
+    thead th.th-estado { text-align: center; width: 140px; }
+    thead th.th-actions{ text-align: center; width: 100px; }
 
     tbody tr {
       border-bottom: 1px solid var(--border);
       transition: background .12s;
     }
     tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: #FAFAFF; }
+    tbody tr:hover { background: var(--purple-bg); }
     tbody tr.flash-ok {
       animation: rowFlash .6s ease-out;
     }
@@ -587,7 +671,7 @@ async def panel_stock():
     .stock-input:focus {
       outline: none;
       border-color: var(--purple);
-      box-shadow: 0 0 0 3px rgba(139,92,246,.15);
+      box-shadow: 0 0 0 3px rgba(8,50,98,.15);
     }
     /* hide spinner arrows */
     .stock-input::-webkit-inner-spin-button,
@@ -1086,6 +1170,7 @@ async def panel_stock():
   <div class="section-tabs">
     <button class="section-tab active" id="stab-stock" onclick="switchSection('stock')">Stock Principal</button>
     <button class="section-tab" id="stab-consig" onclick="switchSection('consig')">Consignacion</button>
+    <button class="section-tab" id="stab-movimientos" onclick="switchSection('movimientos')">Movimientos</button>
   </div>
 
   <!-- ══ SECTION: Stock Principal ══ -->
@@ -1122,6 +1207,125 @@ async def panel_stock():
         Cargando inventario...
       </div>
     </div>
+  </div>
+
+  <!-- ══ SECTION: Movimientos ══ -->
+  <div id="section-movimientos" style="display:none">
+
+    <!-- KPIs movimientos -->
+    <div class="kpi-grid" id="mov-kpi-grid">
+      <div class="kpi-card total">
+        <div class="kpi-label">Ventas del mes</div>
+        <div class="kpi-value" id="mkpi-ventas">—</div>
+      </div>
+      <div class="kpi-card disp">
+        <div class="kpi-label">Unidades vendidas</div>
+        <div class="kpi-value" id="mkpi-unidades">—</div>
+      </div>
+      <div class="kpi-card bajo">
+        <div class="kpi-label">Reposiciones del mes</div>
+        <div class="kpi-value" id="mkpi-repos">—</div>
+      </div>
+      <div class="kpi-card agot" style="color:var(--green)">
+        <div class="kpi-label">Valor vendido</div>
+        <div class="kpi-value" id="mkpi-valor" style="font-size:1.3rem">—</div>
+      </div>
+    </div>
+
+    <!-- Toolbar movimientos -->
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="mfil-tipo" onchange="filtrarMovimientos()" style="font-family:Raleway,sans-serif;font-size:.85rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:38px">
+          <option value="">Todos los tipos</option>
+          <option value="venta">Venta</option>
+          <option value="reposicion">Reposicion</option>
+          <option value="retiro">Retiro</option>
+          <option value="ajuste">Ajuste</option>
+        </select>
+        <select id="mfil-periodo" onchange="filtrarMovimientos()" style="font-family:Raleway,sans-serif;font-size:.85rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:38px">
+          <option value="mes">Este mes</option>
+          <option value="semana">Esta semana</option>
+          <option value="hoy">Hoy</option>
+          <option value="todo">Todo</option>
+        </select>
+        <input type="text" id="mfil-buscar" placeholder="Buscar producto..." oninput="filtrarMovimientos()" style="font-family:Raleway,sans-serif;font-size:.85rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:38px;min-width:180px">
+      </div>
+      <button class="btn-new-store" onclick="toggleMovForm()" id="btn-nuevo-mov">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" d="M12 4v16m8-8H4"/>
+        </svg>
+        Registrar movimiento
+      </button>
+    </div>
+
+    <!-- Inline form nuevo movimiento -->
+    <div class="new-store-form" id="mov-form" style="flex-direction:column;gap:14px">
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+        <div style="min-width:140px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Tipo *</label>
+          <select id="mf-tipo" onchange="onMovTipoChange()" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+            <option value="venta">Venta</option>
+            <option value="reposicion">Reposicion</option>
+            <option value="retiro">Retiro</option>
+            <option value="ajuste">Ajuste</option>
+          </select>
+        </div>
+        <div style="flex:2;min-width:160px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Producto *</label>
+          <select id="mf-producto" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+            <option value="">— Seleccionar —</option>
+          </select>
+        </div>
+        <div style="width:90px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Cantidad *</label>
+          <input type="number" id="mf-cantidad" value="1" min="1" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+        </div>
+        <div style="min-width:150px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Ubicacion</label>
+          <select id="mf-ubicacion" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+            <option value="Solumedic">Solumedic</option>
+          </select>
+        </div>
+        <div id="mf-precio-wrap" style="min-width:150px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Precio venta</label>
+          <input type="number" id="mf-precio" value="0" min="0" placeholder="Gs." style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+        </div>
+        <div style="min-width:120px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Fecha</label>
+          <input type="date" id="mf-fecha" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+        </div>
+        <div style="flex:2;min-width:160px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Notas</label>
+          <input type="text" id="mf-notas" placeholder="Opcional" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-sm primary" onclick="registrarMovimiento()">Registrar</button>
+        <button class="btn-sm secondary" onclick="toggleMovForm()">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- Tabla historial -->
+    <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm)">
+      <table style="width:100%;border-collapse:collapse" id="mov-table">
+        <thead>
+          <tr>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Fecha</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Tipo</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Producto</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:center;border-bottom:1px solid var(--border)">Cant.</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Ubicacion</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:right;border-bottom:1px solid var(--border)">Precio</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Notas</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:center;border-bottom:1px solid var(--border)">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="mov-tbody">
+          <tr><td colspan="8" class="state-msg">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
   </div>
 
   <!-- ══ SECTION: Consignacion ══ -->
@@ -1340,7 +1544,7 @@ async def panel_stock():
                 <tr>
                   <th>Producto</th>
                   <th class="th-stock">Stock</th>
-                  <th>Estado</th>
+                  <th class="th-estado">Estado</th>
                   <th class="th-actions">Acciones</th>
                 </tr>
               </thead>
@@ -1511,9 +1715,224 @@ async def panel_stock():
     currentSection = sec;
     document.getElementById('section-stock').style.display = sec === 'stock' ? '' : 'none';
     document.getElementById('section-consig').style.display = sec === 'consig' ? '' : 'none';
+    document.getElementById('section-movimientos').style.display = sec === 'movimientos' ? '' : 'none';
     document.getElementById('stab-stock').classList.toggle('active', sec === 'stock');
     document.getElementById('stab-consig').classList.toggle('active', sec === 'consig');
+    document.getElementById('stab-movimientos').classList.toggle('active', sec === 'movimientos');
     if (sec === 'consig' && !consigData) cargarConsig();
+    if (sec === 'movimientos' && !movimientosData) cargarMovimientos();
+  }
+
+  /* ─── Movimientos state ─── */
+  let movimientosData = null;
+  let movimientosFiltrados = [];
+
+  /* ─── Movimientos helpers ─── */
+  function formatFechaMov(isoStr) {
+    if (!isoStr) return '—';
+    const d = new Date(isoStr);
+    if (isNaN(d)) return isoStr;
+    return d.toLocaleString('es-PY', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  }
+
+  function formatGs(num) {
+    if (!num) return '—';
+    return 'Gs. ' + Math.round(num).toLocaleString('es-PY');
+  }
+
+  function mesActual() {
+    const now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  }
+
+  function actualizarMovKPIs(movs) {
+    const mes = mesActual();
+    const ventasMes = movs.filter(m => m.tipo === 'venta' && (m.fecha || '').startsWith(mes));
+    const reposMes  = movs.filter(m => m.tipo === 'reposicion' && (m.fecha || '').startsWith(mes));
+    const unidades  = ventasMes.reduce((s,m) => s + (m.cantidad||0), 0);
+    const valor     = ventasMes.reduce((s,m) => s + ((m.precio_venta||0) * (m.cantidad||0)), 0);
+    document.getElementById('mkpi-ventas').textContent  = ventasMes.length;
+    document.getElementById('mkpi-unidades').textContent = unidades;
+    document.getElementById('mkpi-repos').textContent   = reposMes.length;
+    document.getElementById('mkpi-valor').textContent   = formatGs(valor);
+  }
+
+  function badgeMov(tipo) {
+    const map = {
+      venta:      ['var(--green-bg)',  'var(--green-txt)',  'Venta'],
+      reposicion: ['var(--purple-bg)', 'var(--purple)',     'Reposicion'],
+      retiro:     ['var(--amber-bg)',  'var(--amber-txt)',  'Retiro'],
+      ajuste:     ['#ebebeb',          '#555',              'Ajuste'],
+    };
+    const [bg, color, label] = map[tipo] || ['#ebebeb','#555', tipo];
+    return `<span style="display:inline-flex;align-items:center;font-size:.72rem;font-weight:700;border-radius:99px;padding:3px 10px;background:${bg};color:${color}">${label}</span>`;
+  }
+
+  function rowBgMov(tipo) {
+    const map = { venta:'var(--green-bg)', reposicion:'#e8eef5', retiro:'var(--amber-bg)', ajuste:'#f0f0f0' };
+    return map[tipo] || 'transparent';
+  }
+
+  /* ─── Movimientos load ─── */
+  async function cargarMovimientos() {
+    try {
+      const res = await fetch('/api/movimientos');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      movimientosData = await res.json();
+      filtrarMovimientos();
+    } catch(err) {
+      document.getElementById('mov-tbody').innerHTML =
+        '<tr><td colspan="8" class="state-msg">Error al cargar movimientos</td></tr>';
+      mostrarToast('Error al cargar movimientos', 'err');
+    }
+  }
+
+  /* ─── Render movimientos ─── */
+  function renderMovimientos(movs) {
+    actualizarMovKPIs(movimientosData ? (movimientosData.movimientos || []) : []);
+    const tbody = document.getElementById('mov-tbody');
+    if (!movs || movs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="state-msg">Sin movimientos registrados aun.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = movs.map(m => `
+      <tr style="border-bottom:1px solid var(--border);background:${rowBgMov(m.tipo)}">
+        <td style="padding:10px 14px;font-size:.82rem;white-space:nowrap">${formatFechaMov(m.fecha)}</td>
+        <td style="padding:10px 14px">${badgeMov(m.tipo)}</td>
+        <td style="padding:10px 14px;font-size:.88rem;font-weight:500">${escapeHtml(m.producto)}</td>
+        <td style="padding:10px 14px;text-align:center;font-family:Montserrat,sans-serif;font-weight:600">${m.cantidad}</td>
+        <td style="padding:10px 14px;font-size:.85rem;color:var(--text-muted)">${escapeHtml(m.ubicacion||'')}</td>
+        <td style="padding:10px 14px;text-align:right;font-size:.82rem;font-family:Montserrat,sans-serif">${m.precio_venta ? formatGs(m.precio_venta) : '—'}</td>
+        <td style="padding:10px 14px;font-size:.82rem;color:var(--text-muted)">${escapeHtml(m.notas||'')}</td>
+        <td style="padding:10px 14px;text-align:center">
+          <button class="btn-icon danger" onclick="eliminarMovimiento('${m.id}')" title="Eliminar">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </button>
+        </td>
+      </tr>`).join('');
+  }
+
+  /* ─── Filtrar movimientos (JS, sin recarga) ─── */
+  function filtrarMovimientos() {
+    if (!movimientosData) return;
+    const tipo    = document.getElementById('mfil-tipo').value;
+    const periodo = document.getElementById('mfil-periodo').value;
+    const buscar  = document.getElementById('mfil-buscar').value.toLowerCase().trim();
+    const now     = new Date();
+    const hoy     = now.toISOString().slice(0,10);
+    const lunes   = (() => { const d = new Date(now); d.setDate(d.getDate() - ((d.getDay()+6)%7)); return d.toISOString().slice(0,10); })();
+    const primerMes = hoy.slice(0,7) + '-01';
+
+    let movs = (movimientosData.movimientos || []).filter(m => {
+      if (tipo && m.tipo !== tipo) return false;
+      if (buscar && !(m.producto||'').toLowerCase().includes(buscar)) return false;
+      const fStr = (m.fecha || '').slice(0,10);
+      if (periodo === 'hoy'    && fStr !== hoy)      return false;
+      if (periodo === 'semana' && fStr < lunes)       return false;
+      if (periodo === 'mes'    && fStr < primerMes)   return false;
+      return true;
+    });
+    movimientosFiltrados = movs;
+    renderMovimientos(movs);
+  }
+
+  /* ─── Registrar movimiento ─── */
+  async function registrarMovimiento() {
+    const tipo     = document.getElementById('mf-tipo').value;
+    const prodSel  = document.getElementById('mf-producto').value.trim();
+    const cantidad = parseInt(document.getElementById('mf-cantidad').value, 10);
+    const ubicacion= document.getElementById('mf-ubicacion').value;
+    const precio   = parseFloat(document.getElementById('mf-precio').value) || 0;
+    const fechaVal = document.getElementById('mf-fecha').value;
+    const notas    = document.getElementById('mf-notas').value.trim();
+    if (!prodSel) { mostrarToast('Selecciona un producto', 'err'); return; }
+    if (!cantidad || cantidad < 1) { mostrarToast('Cantidad invalida', 'err'); return; }
+    const fecha = fechaVal ? fechaVal + 'T00:00:00' : '';
+    try {
+      const res = await fetch('/api/movimientos', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ tipo, producto: prodSel, cantidad, ubicacion, precio_venta: precio, notas, fecha })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (!movimientosData) movimientosData = { movimientos: [] };
+      movimientosData.movimientos.unshift(data.movimiento);
+      toggleMovForm();
+      filtrarMovimientos();
+      mostrarToast('Movimiento registrado', 'ok');
+    } catch(err) {
+      mostrarToast('Error al registrar movimiento', 'err');
+    }
+  }
+
+  /* ─── Eliminar movimiento ─── */
+  async function eliminarMovimiento(movId) {
+    if (!confirm('Eliminar este movimiento?')) return;
+    try {
+      const res = await fetch('/api/movimientos/' + movId, { method: 'DELETE' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      movimientosData.movimientos = movimientosData.movimientos.filter(m => m.id !== movId);
+      filtrarMovimientos();
+      mostrarToast('Movimiento eliminado', 'ok');
+    } catch(err) {
+      mostrarToast('Error al eliminar', 'err');
+    }
+  }
+
+  /* ─── Toggle form movimiento ─── */
+  function toggleMovForm() {
+    const f = document.getElementById('mov-form');
+    const visible = f.classList.toggle('visible');
+    if (visible) {
+      // populate producto select from stock
+      const sel = document.getElementById('mf-producto');
+      sel.innerHTML = '<option value="">— Seleccionar —</option>';
+      if (stockData && stockData.productos) {
+        Object.values(stockData.productos).forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.nombre; opt.textContent = p.nombre;
+          sel.appendChild(opt);
+        });
+      }
+      const optOtro = document.createElement('option');
+      optOtro.value = '__custom__'; optOtro.textContent = 'Otro';
+      sel.appendChild(optOtro);
+      sel.onchange = function() {
+        if (this.value === '__custom__') {
+          const v = prompt('Nombre del producto:');
+          if (v) { const o = document.createElement('option'); o.value=v; o.textContent=v; o.selected=true; sel.appendChild(o); }
+          else this.value = '';
+        }
+      };
+      // populate ubicacion from consig + Solumedic
+      const uSel = document.getElementById('mf-ubicacion');
+      uSel.innerHTML = '<option value="Solumedic">Solumedic</option>';
+      if (consigData && consigData.tiendas) {
+        consigData.tiendas.forEach(t => {
+          if (t.id !== 'solumedic') {
+            const opt = document.createElement('option');
+            opt.value = t.nombre; opt.textContent = t.nombre;
+            uSel.appendChild(opt);
+          }
+        });
+      }
+      // default fecha = hoy
+      const today = new Date().toISOString().slice(0,10);
+      document.getElementById('mf-fecha').value = today;
+      onMovTipoChange();
+    } else {
+      document.getElementById('mf-cantidad').value = '1';
+      document.getElementById('mf-precio').value = '0';
+      document.getElementById('mf-notas').value = '';
+    }
+  }
+
+  function onMovTipoChange() {
+    const tipo = document.getElementById('mf-tipo').value;
+    document.getElementById('mf-precio-wrap').style.display = tipo === 'venta' ? '' : 'none';
   }
 
   /* ─── Consignacion state ─── */
