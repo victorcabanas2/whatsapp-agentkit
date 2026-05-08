@@ -18,9 +18,11 @@ logger = logging.getLogger("stock_panel")
 router = APIRouter()
 # Path absoluto: sube un nivel desde agent/ para llegar a la raíz del proyecto
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STOCK_FILE = os.path.join(_BASE_DIR, "knowledge", "stock_actual.json")
-CONSIG_FILE = os.path.join(_BASE_DIR, "knowledge", "consignacion.json")
-MOVIMIENTOS_FILE = os.path.join(_BASE_DIR, "knowledge", "movimientos.json")
+# DATA_DIR: en Railway apunta al volumen persistente; en local usa knowledge/
+_DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(_BASE_DIR, "knowledge")
+STOCK_FILE = os.path.join(_DATA_DIR, "stock_actual.json")
+CONSIG_FILE = os.path.join(_DATA_DIR, "consignacion.json")
+MOVIMIENTOS_FILE = os.path.join(_DATA_DIR, "movimientos.json")
 
 
 # ── Pydantic models para consignacion ──
@@ -867,7 +869,9 @@ async def panel_stock():
     .store-body { padding: 0; }
 
     /* consignacion product table */
-    .consig-table { width: 100%; border-collapse: collapse; }
+    .consig-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .consig-table thead th:nth-child(2) { width: 110px; }
+    .consig-table thead th:nth-child(4) { width: 100px; }
     .consig-table thead th {
       background: #F5F3FF;
       font-size: .72rem;
@@ -1278,7 +1282,7 @@ async def panel_stock():
         </div>
         <div style="width:90px">
           <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Cantidad *</label>
-          <input type="number" id="mf-cantidad" value="1" min="1" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+          <input type="number" id="mf-cantidad" value="1" min="1" onkeydown="if(event.key==='Enter'){event.preventDefault();registrarMovimiento()}" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
         </div>
         <div style="min-width:150px">
           <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Ubicacion</label>
@@ -1288,7 +1292,7 @@ async def panel_stock():
         </div>
         <div id="mf-precio-wrap" style="min-width:150px">
           <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Precio venta</label>
-          <input type="number" id="mf-precio" value="0" min="0" placeholder="Gs." style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+          <input type="number" id="mf-precio" value="0" min="0" placeholder="Gs." onkeydown="if(event.key==='Enter'){event.preventDefault();registrarMovimiento()}" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
         </div>
         <div style="min-width:120px">
           <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Fecha</label>
@@ -1296,7 +1300,7 @@ async def panel_stock():
         </div>
         <div style="flex:2;min-width:160px">
           <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Notas</label>
-          <input type="text" id="mf-notas" placeholder="Opcional" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+          <input type="text" id="mf-notas" placeholder="Opcional" onkeydown="if(event.key==='Enter'){event.preventDefault();registrarMovimiento()}" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
         </div>
       </div>
       <div style="display:flex;gap:8px">
@@ -1358,7 +1362,7 @@ async def panel_stock():
     <div class="new-store-form" id="new-store-form">
       <div class="f-nombre">
         <label>Nombre *</label>
-        <input type="text" id="ns-nombre" placeholder="Nombre del local">
+        <input type="text" id="ns-nombre" placeholder="Nombre del local" onkeydown="if(event.key==='Enter'){event.preventDefault();crearTienda()}">
       </div>
       <div class="f-tipo">
         <label>Tipo</label>
@@ -1369,7 +1373,7 @@ async def panel_stock():
       </div>
       <div class="f-dir">
         <label>Direccion</label>
-        <input type="text" id="ns-dir" placeholder="Direccion (opcional)">
+        <input type="text" id="ns-dir" placeholder="Direccion (opcional)" onkeydown="if(event.key==='Enter'){event.preventDefault();crearTienda()}">
       </div>
       <div class="f-btns">
         <button class="btn-sm primary" onclick="crearTienda()">Guardar</button>
@@ -2015,11 +2019,11 @@ async def panel_stock():
         <div class="edit-store-form" id="edit-form-${sid}">
           <div class="f-nombre">
             <label>Nombre</label>
-            <input type="text" id="ef-nombre-${sid}" value="${escapeHtml(tienda.nombre)}">
+            <input type="text" id="ef-nombre-${sid}" value="${escapeHtml(tienda.nombre)}" onkeydown="if(event.key==='Enter'){event.preventDefault();guardarEditTienda('${sid}')}">
           </div>
           <div class="f-dir">
             <label>Direccion</label>
-            <input type="text" id="ef-dir-${sid}" value="${escapeHtml(tienda.direccion || '')}">
+            <input type="text" id="ef-dir-${sid}" value="${escapeHtml(tienda.direccion || '')}" onkeydown="if(event.key==='Enter'){event.preventDefault();guardarEditTienda('${sid}')}">
           </div>
           <div class="f-btns">
             <button class="btn-sm primary" onclick="guardarEditTienda('${sid}')">Guardar</button>
@@ -2049,15 +2053,15 @@ async def panel_stock():
               ${getCatalogOptions()}
               <option value="__custom__">✏️ Otro (escribir nombre)</option>
             </select>
-            <input type="text" id="ap-nombre-${sid}" placeholder="Nombre personalizado" style="display:none;margin-top:6px">
+            <input type="text" id="ap-nombre-${sid}" placeholder="Nombre personalizado" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarProducto('${sid}')}" style="display:none;margin-top:6px">
           </div>
           <div class="f-stock">
             <label>Stock</label>
-            <input type="number" id="ap-stock-${sid}" value="0" min="0">
+            <input type="number" id="ap-stock-${sid}" value="0" min="0" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarProducto('${sid}')}">
           </div>
           <div class="f-notas">
             <label>Notas</label>
-            <input type="text" id="ap-notas-${sid}" placeholder="Opcional">
+            <input type="text" id="ap-notas-${sid}" placeholder="Opcional" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarProducto('${sid}')}">
           </div>
           <div class="f-btns">
             <button class="btn-sm primary" onclick="agregarProducto('${sid}')">Agregar</button>

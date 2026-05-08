@@ -44,27 +44,6 @@ _TOOL_WEB = [{
     }
 }]
 
-# Keywords que indican pregunta técnica — solo en estos casos se pasa el tool a Claude
-_KEYWORDS_SPECS = {
-    "como funciona", "cómo funciona", "que hace", "qué hace",
-    "para que sirve", "para qué sirve", "como se usa", "cómo se usa",
-    "especificaciones", "especificacion", "caracteristicas", "características",
-    "modos", "temperatura", "bateria", "batería", "autonomia", "autonomía",
-    "dimensiones", "medidas", "peso", "tamaño", "tamano",
-    "compatible", "compatibilidad", "materiales", "material",
-    "diferencia entre", "diferencias", "que incluye", "qué incluye",
-    "frecuencia", "intensidad", "niveles", "ajustes", "configuracion",
-    "detalles tecnicos", "detalles técnicos", "specs", "ficha tecnica",
-    "waterproof", "resistente", "agua", "ip68", "ip67",
-    "sensores", "sensor", "algoritmo", "precision", "precisión",
-}
-
-
-def _necesita_tool_web(mensaje: str) -> bool:
-    """Retorna True solo si el mensaje contiene una pregunta técnica sobre specs."""
-    msg = mensaje.lower()
-    return any(kw in msg for kw in _KEYWORDS_SPECS)
-
 
 def cargar_config_prompts() -> dict:
     """Lee la configuración completa desde config/prompts.yaml."""
@@ -83,7 +62,8 @@ def cargar_config_prompts() -> dict:
 def cargar_stock_actual() -> str:
     """Lee el stock actual del archivo JSON y lo formatea para el prompt."""
     try:
-        with open("knowledge/stock_actual.json", "r", encoding="utf-8") as f:
+        _data_dir = os.environ.get("DATA_DIR") or "knowledge"
+        with open(os.path.join(_data_dir, "stock_actual.json"), "r", encoding="utf-8") as f:
             data = json.load(f)
 
         stock_texto = "\n  STOCK ACTUAL (EN VIVO, actualizado automáticamente):\n"
@@ -735,15 +715,12 @@ async def generar_respuesta(
             "cache_control": {"type": "ephemeral"}
         }]
 
-        usar_tool = _necesita_tool_web(mensaje)
-        kwargs = {"tools": _TOOL_WEB} if usar_tool else {}
-
         response = await client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1024,
             system=sistema,
             messages=mensajes,
-            **kwargs
+            tools=_TOOL_WEB,
         )
 
         # Manejar tool use si Claude solicita buscar specs en la web
@@ -765,22 +742,24 @@ async def generar_respuesta(
                 mensajes.append({"role": "assistant", "content": response.content})
                 mensajes.append({"role": "user", "content": tool_results})
 
+                # Segunda llamada: pasar tools para que la API acepte el historial con tool_result
                 response = await client.messages.create(
                     model="claude-sonnet-4-6",
                     max_tokens=1024,
                     system=sistema,
                     messages=mensajes,
-                    **kwargs
+                    tools=_TOOL_WEB,
                 )
 
         # Extraer texto de la respuesta
         respuesta = ""
         for block in response.content:
-            if hasattr(block, "text"):
+            if hasattr(block, "text") and block.text:
                 respuesta = block.text
                 break
 
         if not respuesta:
+            logger.warning(f"⚠️ Respuesta vacía de Claude. stop_reason={response.stop_reason} blocks={[type(b).__name__ for b in response.content]}")
             return obtener_mensaje_error()
 
         # Log de uso con info de caché
