@@ -15,11 +15,7 @@ EXPOSE 8000
 ENV PYTHONUNBUFFERED=1
 ENV ENVIRONMENT=production
 
-# Run as non-root user (CN-010)
-RUN useradd --system --no-create-home --uid 1001 appuser && \
-    chown -R appuser:appuser /app && \
-    chmod +x /app/docker-entrypoint.sh
-USER appuser
+RUN chmod +x /app/docker-entrypoint.sh
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
