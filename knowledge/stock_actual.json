@@ -53,9 +53,9 @@
     "9200281288962": {
       "id": "9200281288962",
       "nombre": "JetBoots Pro Plus",
-      "stock": 0,
-      "disponible": false,
-      "timestamp": "2026-04-08T16:32:53"
+      "stock": 10,
+      "disponible": true,
+      "timestamp": "2026-05-08T19:00:00"
     },
     "9157826216194": {
       "id": "9157826216194",
@@ -67,9 +67,9 @@
     "9157826838786": {
       "id": "9157826838786",
       "nombre": "TheraFace Mask",
-      "stock": 0,
-      "disponible": false,
-      "timestamp": "2026-04-08T16:32:53"
+      "stock": 5,
+      "disponible": true,
+      "timestamp": "2026-05-08T19:00:00"
     },
     "9157832081666": {
       "id": "9157832081666",

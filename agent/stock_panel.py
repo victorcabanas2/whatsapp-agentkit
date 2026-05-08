@@ -361,7 +361,9 @@ async def panel_stock():
                                     <input type="number" class="stock-input"
                                            id="stock-${prod.id}"
                                            value="${prod.stock}"
-                                           min="0">
+                                           min="0"
+                                           onblur="guardarStock('${prod.id}')"
+                                           onchange="guardarStock('${prod.id}')">
                                 </div>
                             </td>
                             <td>
@@ -370,7 +372,6 @@ async def panel_stock():
                             <td>
                                 <button onclick="restarStock('${prod.id}', 1)" class="less">−1</button>
                                 <button onclick="sumarStock('${prod.id}', 1)">+1</button>
-                                <button onclick="guardarStock('${prod.id}')" class="save">Guardar</button>
                             </td>
                         </tr>
                     `;
@@ -412,16 +413,22 @@ async def panel_stock():
 
             async function guardarStock(productId) {
                 const nuevoStock = parseInt(document.getElementById(`stock-${productId}`).value);
+                if (isNaN(nuevoStock) || nuevoStock < 0) return;
 
                 try {
                     const response = await fetch(`/api/stock/${productId}?stock=${nuevoStock}`, {
                         method: 'POST'
                     });
+                    if (!response.ok) {
+                        const err = await response.json();
+                        console.error('Error guardando stock:', err);
+                        return;
+                    }
                     const data = await response.json();
                     stockData.productos[productId] = data.producto;
                     renderTabla();
                 } catch (error) {
-                    alert('Error: ' + error.message);
+                    console.error('Error guardando stock:', error.message);
                 }
             }
 
