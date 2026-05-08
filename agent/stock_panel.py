@@ -6,9 +6,12 @@ API endpoints para ver y editar stock
 import os
 import json
 import logging
+import uuid
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel
+from typing import Optional
 
 logger = logging.getLogger("stock_panel")
 
@@ -16,6 +19,52 @@ router = APIRouter()
 # Path absoluto: sube un nivel desde agent/ para llegar a la raíz del proyecto
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STOCK_FILE = os.path.join(_BASE_DIR, "knowledge", "stock_actual.json")
+CONSIG_FILE = os.path.join(_BASE_DIR, "knowledge", "consignacion.json")
+
+
+# ── Pydantic models para consignacion ──
+
+class TiendaCreate(BaseModel):
+    nombre: str
+    tipo: Optional[str] = "consignacion"
+    direccion: Optional[str] = ""
+
+class TiendaUpdate(BaseModel):
+    nombre: Optional[str] = None
+    direccion: Optional[str] = None
+
+class ProductoCreate(BaseModel):
+    nombre: str
+    stock: int = 0
+    notas: Optional[str] = ""
+
+class ProductoUpdate(BaseModel):
+    nombre: Optional[str] = None
+    stock: Optional[int] = None
+    notas: Optional[str] = None
+
+
+# ── Consignacion helpers ──
+
+def load_consig():
+    if not os.path.exists(CONSIG_FILE):
+        return {"tiendas": [], "ultima_actualizacion": datetime.now().isoformat()}
+    try:
+        with open(CONSIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error leyendo consignacion: {e}")
+        return {"tiendas": [], "ultima_actualizacion": datetime.now().isoformat()}
+
+
+def save_consig(data):
+    try:
+        data["ultima_actualizacion"] = datetime.now().isoformat()
+        with open(CONSIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Error guardando consignacion: {e}")
+        raise
 
 
 def load_stock():
@@ -117,6 +166,110 @@ async def subtract_stock(product_id: str, cantidad: int = 1):
         "status": "ok",
         "producto": data["productos"][product_id]
     }
+
+
+@router.get("/api/consignacion")
+async def get_consignacion():
+    return load_consig()
+
+
+@router.post("/api/consignacion/tiendas")
+async def crear_tienda(body: TiendaCreate):
+    data = load_consig()
+    nueva = {
+        "id": uuid.uuid4().hex[:8],
+        "nombre": body.nombre.strip(),
+        "tipo": body.tipo if body.tipo in ("principal", "consignacion") else "consignacion",
+        "direccion": body.direccion or "",
+        "activa": True,
+        "productos": []
+    }
+    data["tiendas"].append(nueva)
+    save_consig(data)
+    return {"status": "ok", "tienda": nueva}
+
+
+@router.put("/api/consignacion/tiendas/{store_id}")
+async def editar_tienda(store_id: str, body: TiendaUpdate):
+    data = load_consig()
+    tienda = next((t for t in data["tiendas"] if t["id"] == store_id), None)
+    if not tienda:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada")
+    if body.nombre is not None:
+        tienda["nombre"] = body.nombre.strip()
+    if body.direccion is not None:
+        tienda["direccion"] = body.direccion
+    save_consig(data)
+    return {"status": "ok", "tienda": tienda}
+
+
+@router.delete("/api/consignacion/tiendas/{store_id}")
+async def eliminar_tienda(store_id: str):
+    if store_id == "solumedic":
+        raise HTTPException(status_code=403, detail="No se puede eliminar la tienda principal")
+    data = load_consig()
+    original = len(data["tiendas"])
+    data["tiendas"] = [t for t in data["tiendas"] if t["id"] != store_id]
+    if len(data["tiendas"]) == original:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada")
+    save_consig(data)
+    return {"status": "ok"}
+
+
+@router.post("/api/consignacion/tiendas/{store_id}/productos")
+async def agregar_producto(store_id: str, body: ProductoCreate):
+    data = load_consig()
+    tienda = next((t for t in data["tiendas"] if t["id"] == store_id), None)
+    if not tienda:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada")
+    if body.stock < 0:
+        raise HTTPException(status_code=400, detail="Stock no puede ser negativo")
+    nuevo = {
+        "id": uuid.uuid4().hex[:8],
+        "nombre": body.nombre.strip(),
+        "stock": body.stock,
+        "notas": body.notas or "",
+        "timestamp": datetime.now().isoformat()
+    }
+    tienda["productos"].append(nuevo)
+    save_consig(data)
+    return {"status": "ok", "producto": nuevo}
+
+
+@router.put("/api/consignacion/tiendas/{store_id}/productos/{prod_id}")
+async def actualizar_producto(store_id: str, prod_id: str, body: ProductoUpdate):
+    data = load_consig()
+    tienda = next((t for t in data["tiendas"] if t["id"] == store_id), None)
+    if not tienda:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada")
+    prod = next((p for p in tienda["productos"] if p["id"] == prod_id), None)
+    if not prod:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    if body.nombre is not None:
+        prod["nombre"] = body.nombre.strip()
+    if body.stock is not None:
+        if body.stock < 0:
+            raise HTTPException(status_code=400, detail="Stock no puede ser negativo")
+        prod["stock"] = body.stock
+    if body.notas is not None:
+        prod["notas"] = body.notas
+    prod["timestamp"] = datetime.now().isoformat()
+    save_consig(data)
+    return {"status": "ok", "producto": prod}
+
+
+@router.delete("/api/consignacion/tiendas/{store_id}/productos/{prod_id}")
+async def eliminar_producto(store_id: str, prod_id: str):
+    data = load_consig()
+    tienda = next((t for t in data["tiendas"] if t["id"] == store_id), None)
+    if not tienda:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada")
+    original = len(tienda["productos"])
+    tienda["productos"] = [p for p in tienda["productos"] if p["id"] != prod_id]
+    if len(tienda["productos"]) == original:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    save_consig(data)
+    return {"status": "ok"}
 
 
 @router.get("/panel/stock", response_class=HTMLResponse)
@@ -532,6 +685,361 @@ async def panel_stock():
       td { padding: 10px 12px; }
       .stock-input { width: 60px; }
     }
+
+    /* ── Section tabs (Stock Principal / Consignacion) ── */
+    .section-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 0;
+    }
+    .section-tab {
+      font-family: 'Fira Sans', sans-serif;
+      font-size: .9rem;
+      font-weight: 600;
+      padding: 10px 20px;
+      border: none;
+      border-bottom: 3px solid transparent;
+      background: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: color .15s, border-color .15s;
+      margin-bottom: -2px;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    }
+    .section-tab:hover { color: var(--purple); }
+    .section-tab.active { color: var(--purple); border-bottom-color: var(--purple); }
+
+    /* ── Consignacion KPI grid (2 cards) ── */
+    .kpi-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    @media (max-width: 400px) { .kpi-grid-2 { grid-template-columns: 1fr; } }
+
+    /* ── Store cards ── */
+    .store-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .store-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: #FAFAFF;
+    }
+    .store-info { flex: 1; min-width: 0; }
+    .store-name {
+      font-family: 'Fira Code', monospace;
+      font-size: .95rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .store-addr {
+      font-size: .8rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .badge-tipo {
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      border-radius: 99px;
+      padding: 3px 10px;
+      flex-shrink: 0;
+    }
+    .badge-tipo.principal  { background: var(--purple-bg); color: var(--purple); }
+    .badge-tipo.consignacion { background: var(--amber-bg); color: var(--amber-txt); }
+    .store-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+    .btn-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--white);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-icon:hover { border-color: var(--purple); color: var(--purple); background: var(--purple-bg); }
+    .btn-icon.danger:hover { border-color: var(--red); color: var(--red); background: var(--red-bg); }
+    .btn-icon:active { transform: scale(.92); }
+
+    .store-body { padding: 0; }
+
+    /* consignacion product table */
+    .consig-table { width: 100%; border-collapse: collapse; }
+    .consig-table thead th {
+      background: #F5F3FF;
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-muted);
+      padding: 8px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .consig-table thead th.th-c { text-align: center; }
+    .consig-table tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background .12s;
+    }
+    .consig-table tbody tr:last-child { border-bottom: none; }
+    .consig-table tbody tr:hover { background: #FAFAFF; }
+    .consig-table tbody tr.flash-ok { animation: rowFlash .6s ease-out; }
+    .consig-table td { padding: 10px 16px; vertical-align: middle; }
+    .consig-table td.td-c { text-align: center; }
+
+    .inline-edit {
+      font-family: 'Fira Sans', sans-serif;
+      font-size: .88rem;
+      width: 100%;
+      padding: 5px 8px;
+      border: 1.5px solid transparent;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text);
+      transition: border-color .15s, background .15s;
+    }
+    .inline-edit:hover { border-color: var(--border); background: var(--white); }
+    .inline-edit:focus { outline: none; border-color: var(--purple); background: var(--white); box-shadow: 0 0 0 3px rgba(139,92,246,.12); }
+
+    .consig-stock-wrap { display: flex; align-items: center; justify-content: center; gap: 4px; }
+    .consig-stock-input {
+      font-family: 'Fira Code', monospace;
+      font-size: .88rem;
+      font-weight: 500;
+      width: 62px;
+      padding: 5px 4px;
+      text-align: center;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      background: var(--white);
+      transition: border-color .15s, box-shadow .15s;
+      min-height: 36px;
+    }
+    .consig-stock-input:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 3px rgba(139,92,246,.15); }
+    .consig-stock-input::-webkit-inner-spin-button,
+    .consig-stock-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+    .consig-stock-input[type=number] { -moz-appearance: textfield; }
+
+    .btn-adj-sm {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 36px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--white);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all .15s;
+      font-size: 1rem;
+    }
+    .btn-adj-sm:hover { border-color: var(--purple); color: var(--purple); background: var(--purple-bg); }
+    .btn-adj-sm.minus:hover { border-color: var(--red); color: var(--red); background: var(--red-bg); }
+    .btn-adj-sm:active { transform: scale(.92); }
+
+    /* inline add-product form */
+    .inline-form {
+      display: none;
+      padding: 14px 16px;
+      background: var(--purple-bg);
+      border-top: 1px solid var(--border);
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+    .inline-form.visible { display: flex; }
+    .inline-form label { font-size: .75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px; }
+    .inline-form input[type=text],
+    .inline-form input[type=number] {
+      font-family: 'Fira Sans', sans-serif;
+      font-size: .85rem;
+      padding: 7px 10px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--white);
+      color: var(--text);
+      min-height: 38px;
+    }
+    .inline-form input[type=text]:focus,
+    .inline-form input[type=number]:focus {
+      outline: none;
+      border-color: var(--purple);
+      box-shadow: 0 0 0 3px rgba(139,92,246,.12);
+    }
+    .inline-form .f-nombre { flex: 2; min-width: 140px; }
+    .inline-form .f-stock  { width: 80px; }
+    .inline-form .f-notas  { flex: 1; min-width: 100px; }
+    .inline-form .f-btns   { display: flex; gap: 6px; align-self: flex-end; }
+
+    .btn-sm {
+      font-family: 'Fira Sans', sans-serif;
+      font-size: .8rem;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: var(--radius-sm);
+      border: none;
+      cursor: pointer;
+      min-height: 38px;
+      transition: background .15s, transform .1s;
+    }
+    .btn-sm.primary { background: var(--purple); color: var(--white); }
+    .btn-sm.primary:hover { background: #7C3AED; }
+    .btn-sm.secondary { background: var(--white); color: var(--text-muted); border: 1.5px solid var(--border); }
+    .btn-sm.secondary:hover { border-color: var(--purple); color: var(--purple); }
+    .btn-sm:active { transform: scale(.96); }
+
+    /* add-product button row */
+    .store-footer {
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      background: #FAFAFF;
+    }
+    .btn-add-prod {
+      font-family: 'Fira Sans', sans-serif;
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--purple);
+      background: none;
+      border: 1.5px dashed var(--purple-lt);
+      border-radius: var(--radius-sm);
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+      min-height: 34px;
+    }
+    .btn-add-prod:hover { background: var(--purple-bg); border-color: var(--purple); }
+
+    /* nueva tienda inline form (top-level) */
+    .new-store-form {
+      display: none;
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      padding: 20px;
+      margin-bottom: 20px;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+    .new-store-form.visible { display: flex; }
+    .new-store-form label { font-size: .75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px; }
+    .new-store-form input[type=text],
+    .new-store-form select {
+      font-family: 'Fira Sans', sans-serif;
+      font-size: .88rem;
+      padding: 8px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--white);
+      color: var(--text);
+      min-height: 42px;
+      width: 100%;
+    }
+    .new-store-form input[type=text]:focus,
+    .new-store-form select:focus {
+      outline: none;
+      border-color: var(--purple);
+      box-shadow: 0 0 0 3px rgba(139,92,246,.12);
+    }
+    .new-store-form .f-nombre { flex: 2; min-width: 160px; }
+    .new-store-form .f-tipo   { width: 150px; }
+    .new-store-form .f-dir    { flex: 2; min-width: 160px; }
+    .new-store-form .f-btns   { display: flex; gap: 8px; align-self: flex-end; }
+
+    /* edit store inline form */
+    .edit-store-form {
+      display: none;
+      background: var(--amber-bg);
+      border-top: 1px solid var(--border);
+      padding: 14px 20px;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+    .edit-store-form.visible { display: flex; }
+    .edit-store-form label { font-size: .75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px; }
+    .edit-store-form input[type=text] {
+      font-family: 'Fira Sans', sans-serif;
+      font-size: .88rem;
+      padding: 7px 10px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--white);
+      color: var(--text);
+      min-height: 38px;
+      width: 100%;
+    }
+    .edit-store-form input[type=text]:focus {
+      outline: none;
+      border-color: var(--purple);
+      box-shadow: 0 0 0 3px rgba(139,92,246,.12);
+    }
+    .edit-store-form .f-nombre { flex: 2; min-width: 140px; }
+    .edit-store-form .f-dir    { flex: 2; min-width: 140px; }
+    .edit-store-form .f-btns   { display: flex; gap: 6px; align-self: flex-end; }
+
+    .consig-empty {
+      padding: 28px 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: .85rem;
+    }
+
+    /* Global "Nueva tienda" button */
+    .btn-new-store {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Fira Sans', sans-serif;
+      font-size: .875rem;
+      font-weight: 600;
+      color: var(--white);
+      background: var(--purple);
+      border: none;
+      border-radius: var(--radius-md);
+      padding: 10px 18px;
+      cursor: pointer;
+      transition: background .15s, transform .1s;
+      min-height: 44px;
+    }
+    .btn-new-store:hover { background: #7C3AED; }
+    .btn-new-store:active { transform: scale(.97); }
+
+    .consig-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .consig-toolbar-title {
+      font-size: .85rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
   </style>
 </head>
 <body>
@@ -574,37 +1082,107 @@ async def panel_stock():
     </div>
   </div>
 
-  <!-- Toolbar -->
-  <div class="toolbar">
-    <div class="search-wrap">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/>
-      </svg>
-      <input
-        type="search"
-        id="search-input"
-        class="search-input"
-        placeholder="Buscar producto..."
-        aria-label="Buscar producto"
-        oninput="aplicarFiltros()"
-      >
+  <!-- Section tabs -->
+  <div class="section-tabs">
+    <button class="section-tab active" id="stab-stock" onclick="switchSection('stock')">Stock Principal</button>
+    <button class="section-tab" id="stab-consig" onclick="switchSection('consig')">Consignacion</button>
+  </div>
+
+  <!-- ══ SECTION: Stock Principal ══ -->
+  <div id="section-stock">
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="search-wrap">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="M21 21l-4.35-4.35"/>
+        </svg>
+        <input
+          type="search"
+          id="search-input"
+          class="search-input"
+          placeholder="Buscar producto..."
+          aria-label="Buscar producto"
+          oninput="aplicarFiltros()"
+        >
+      </div>
+      <div class="tabs" role="tablist" aria-label="Filtrar por estado">
+        <button class="tab active" role="tab" aria-selected="true"  data-tab="todos"      onclick="setTab(this)">Todos</button>
+        <button class="tab"        role="tab" aria-selected="false" data-tab="disponible" onclick="setTab(this)">Disponible</button>
+        <button class="tab"        role="tab" aria-selected="false" data-tab="bajo"       onclick="setTab(this)">Bajo Stock</button>
+        <button class="tab"        role="tab" aria-selected="false" data-tab="agotado"    onclick="setTab(this)">Agotado</button>
+      </div>
     </div>
-    <div class="tabs" role="tablist" aria-label="Filtrar por estado">
-      <button class="tab active" role="tab" aria-selected="true"  data-tab="todos"      onclick="setTab(this)">Todos</button>
-      <button class="tab"        role="tab" aria-selected="false" data-tab="disponible" onclick="setTab(this)">Disponible</button>
-      <button class="tab"        role="tab" aria-selected="false" data-tab="bajo"       onclick="setTab(this)">Bajo Stock</button>
-      <button class="tab"        role="tab" aria-selected="false" data-tab="agotado"    onclick="setTab(this)">Agotado</button>
+
+    <!-- Table area -->
+    <div id="main-content">
+      <div class="state-msg" id="loading-msg">
+        <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM16 3H8l-2 4h12l-2-4z"/>
+        </svg>
+        Cargando inventario...
+      </div>
     </div>
   </div>
 
-  <!-- Table area -->
-  <div id="main-content">
-    <div class="state-msg" id="loading-msg">
-      <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM16 3H8l-2 4h12l-2-4z"/>
-      </svg>
-      Cargando inventario...
+  <!-- ══ SECTION: Consignacion ══ -->
+  <div id="section-consig" style="display:none">
+
+    <!-- KPIs -->
+    <div class="kpi-grid-2">
+      <div class="kpi-card total">
+        <div class="kpi-label">Tiendas / Locales</div>
+        <div class="kpi-value" id="ckpi-tiendas">—</div>
+      </div>
+      <div class="kpi-card disp">
+        <div class="kpi-label">Unidades en consignacion</div>
+        <div class="kpi-value" id="ckpi-unidades">—</div>
+      </div>
     </div>
+
+    <!-- Toolbar consig -->
+    <div class="consig-toolbar">
+      <span class="consig-toolbar-title" id="consig-subtitle">Cargando...</span>
+      <button class="btn-new-store" onclick="toggleNewStoreForm()">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" d="M12 4v16m8-8H4"/>
+        </svg>
+        Nueva tienda
+      </button>
+    </div>
+
+    <!-- Inline new-store form -->
+    <div class="new-store-form" id="new-store-form">
+      <div class="f-nombre">
+        <label>Nombre *</label>
+        <input type="text" id="ns-nombre" placeholder="Nombre del local">
+      </div>
+      <div class="f-tipo">
+        <label>Tipo</label>
+        <select id="ns-tipo">
+          <option value="consignacion">Consignacion</option>
+          <option value="principal">Principal</option>
+        </select>
+      </div>
+      <div class="f-dir">
+        <label>Direccion</label>
+        <input type="text" id="ns-dir" placeholder="Direccion (opcional)">
+      </div>
+      <div class="f-btns">
+        <button class="btn-sm primary" onclick="crearTienda()">Guardar</button>
+        <button class="btn-sm secondary" onclick="toggleNewStoreForm()">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- Store list -->
+    <div id="consig-stores">
+      <div class="state-msg">
+        <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM16 3H8l-2 4h12l-2-4z"/>
+        </svg>
+        Cargando consignacion...
+      </div>
+    </div>
+
   </div>
 
 </div>
@@ -924,6 +1502,375 @@ async def panel_stock():
     return String(str)
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
       .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  /* ─── Section switching ─── */
+  let currentSection = 'stock';
+
+  function switchSection(sec) {
+    currentSection = sec;
+    document.getElementById('section-stock').style.display = sec === 'stock' ? '' : 'none';
+    document.getElementById('section-consig').style.display = sec === 'consig' ? '' : 'none';
+    document.getElementById('stab-stock').classList.toggle('active', sec === 'stock');
+    document.getElementById('stab-consig').classList.toggle('active', sec === 'consig');
+    if (sec === 'consig' && !consigData) cargarConsig();
+  }
+
+  /* ─── Consignacion state ─── */
+  let consigData = null;
+
+  /* ─── Consignacion load ─── */
+  async function cargarConsig() {
+    try {
+      const res = await fetch('/api/consignacion');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      consigData = await res.json();
+      renderConsig();
+    } catch (err) {
+      document.getElementById('consig-stores').innerHTML =
+        '<div class="state-msg">Error al cargar consignacion</div>';
+      mostrarToast('Error al cargar consignacion', 'err');
+    }
+  }
+
+  /* ─── Consignacion KPIs ─── */
+  function actualizarConsigKPIs() {
+    if (!consigData) return;
+    const tiendas = consigData.tiendas || [];
+    const unidades = tiendas.reduce((sum, t) =>
+      sum + (t.productos || []).reduce((s, p) => s + (p.stock || 0), 0), 0);
+    document.getElementById('ckpi-tiendas').textContent = tiendas.length;
+    document.getElementById('ckpi-unidades').textContent = unidades;
+    const fecha = new Date(consigData.ultima_actualizacion).toLocaleString('es-PY', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    document.getElementById('consig-subtitle').textContent = 'Actualizado ' + fecha;
+  }
+
+  /* ─── Render all stores ─── */
+  function renderConsig() {
+    actualizarConsigKPIs();
+    const container = document.getElementById('consig-stores');
+    const tiendas = (consigData && consigData.tiendas) || [];
+    if (tiendas.length === 0) {
+      container.innerHTML = '<div class="state-msg">Sin tiendas registradas. Agrega una con "Nueva tienda".</div>';
+      return;
+    }
+    container.innerHTML = tiendas.map(t => renderStoreCard(t)).join('');
+  }
+
+  function renderStoreCard(tienda) {
+    const sid = tienda.id;
+    const esPrincipal = tienda.tipo === 'principal';
+    const tipoBadge = esPrincipal
+      ? '<span class="badge-tipo principal">Principal</span>'
+      : '<span class="badge-tipo consignacion">Consignacion</span>';
+    const btnEliminar = !esPrincipal
+      ? `<button class="btn-icon danger" onclick="eliminarTienda('${sid}')" title="Eliminar tienda">
+           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+             <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+           </svg>
+         </button>` : '';
+    const prods = tienda.productos || [];
+    const filas = prods.length > 0
+      ? prods.map(p => renderProdFila(sid, p)).join('')
+      : `<tr><td colspan="4" class="consig-empty">Sin productos. Agrega uno abajo.</td></tr>`;
+
+    return `
+      <div class="store-card" id="store-${sid}">
+        <div class="store-header">
+          <div class="store-info">
+            <div class="store-name">${escapeHtml(tienda.nombre)}</div>
+            ${tienda.direccion ? `<div class="store-addr">${escapeHtml(tienda.direccion)}</div>` : ''}
+          </div>
+          ${tipoBadge}
+          <div class="store-actions">
+            <button class="btn-icon" onclick="toggleEditStore('${sid}')" title="Editar tienda">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+              </svg>
+            </button>
+            ${btnEliminar}
+          </div>
+        </div>
+        <div class="edit-store-form" id="edit-form-${sid}">
+          <div class="f-nombre">
+            <label>Nombre</label>
+            <input type="text" id="ef-nombre-${sid}" value="${escapeHtml(tienda.nombre)}">
+          </div>
+          <div class="f-dir">
+            <label>Direccion</label>
+            <input type="text" id="ef-dir-${sid}" value="${escapeHtml(tienda.direccion || '')}">
+          </div>
+          <div class="f-btns">
+            <button class="btn-sm primary" onclick="guardarEditTienda('${sid}')">Guardar</button>
+            <button class="btn-sm secondary" onclick="toggleEditStore('${sid}')">Cancelar</button>
+          </div>
+        </div>
+        <div class="store-body">
+          <table class="consig-table">
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th class="th-c">Stock</th>
+                <th>Notas</th>
+                <th class="th-c">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-${sid}">
+              ${filas}
+            </tbody>
+          </table>
+        </div>
+        <div class="inline-form" id="addprod-form-${sid}">
+          <div class="f-nombre">
+            <label>Producto *</label>
+            <input type="text" id="ap-nombre-${sid}" placeholder="Nombre del producto">
+          </div>
+          <div class="f-stock">
+            <label>Stock</label>
+            <input type="number" id="ap-stock-${sid}" value="0" min="0">
+          </div>
+          <div class="f-notas">
+            <label>Notas</label>
+            <input type="text" id="ap-notas-${sid}" placeholder="Opcional">
+          </div>
+          <div class="f-btns">
+            <button class="btn-sm primary" onclick="agregarProducto('${sid}')">Agregar</button>
+            <button class="btn-sm secondary" onclick="toggleAddProd('${sid}')">Cancelar</button>
+          </div>
+        </div>
+        <div class="store-footer">
+          <button class="btn-add-prod" onclick="toggleAddProd('${sid}')">+ Agregar producto</button>
+        </div>
+      </div>`;
+  }
+
+  function renderProdFila(sid, prod) {
+    const pid = prod.id;
+    return `
+      <tr id="crow-${sid}-${pid}">
+        <td>
+          <input class="inline-edit" type="text"
+            value="${escapeHtml(prod.nombre)}"
+            id="cp-nombre-${sid}-${pid}"
+            onblur="guardarProd('${sid}','${pid}')"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}"
+            aria-label="Nombre del producto">
+        </td>
+        <td class="td-c">
+          <div class="consig-stock-wrap">
+            <button class="btn-adj-sm minus" onclick="ajustarProd('${sid}','${pid}',-1)" title="Restar 1">
+              <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M20 12H4"/></svg>
+            </button>
+            <input class="consig-stock-input" type="number"
+              id="cp-stock-${sid}-${pid}"
+              value="${prod.stock}"
+              min="0"
+              onblur="guardarProd('${sid}','${pid}')"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}">
+            <button class="btn-adj-sm" onclick="ajustarProd('${sid}','${pid}',1)" title="Sumar 1">
+              <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 4v16m8-8H4"/></svg>
+            </button>
+          </div>
+        </td>
+        <td>
+          <input class="inline-edit" type="text"
+            value="${escapeHtml(prod.notas || '')}"
+            id="cp-notas-${sid}-${pid}"
+            placeholder="—"
+            onblur="guardarProd('${sid}','${pid}')"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}"
+            aria-label="Notas">
+        </td>
+        <td class="td-c">
+          <button class="btn-icon danger" onclick="eliminarProducto('${sid}','${pid}')" title="Eliminar producto">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </button>
+        </td>
+      </tr>`;
+  }
+
+  /* ─── Toggle helpers ─── */
+  function toggleNewStoreForm() {
+    const f = document.getElementById('new-store-form');
+    const visible = f.classList.toggle('visible');
+    if (visible) { document.getElementById('ns-nombre').focus(); }
+    else { document.getElementById('ns-nombre').value = ''; document.getElementById('ns-dir').value = ''; }
+  }
+
+  function toggleAddProd(sid) {
+    const f = document.getElementById('addprod-form-' + sid);
+    const visible = f.classList.toggle('visible');
+    if (visible) { document.getElementById('ap-nombre-' + sid).focus(); }
+    else {
+      document.getElementById('ap-nombre-' + sid).value = '';
+      document.getElementById('ap-stock-' + sid).value = '0';
+      document.getElementById('ap-notas-' + sid).value = '';
+    }
+  }
+
+  function toggleEditStore(sid) {
+    const f = document.getElementById('edit-form-' + sid);
+    f.classList.toggle('visible');
+    if (f.classList.contains('visible')) {
+      document.getElementById('ef-nombre-' + sid).focus();
+    }
+  }
+
+  /* ─── Consignacion API calls ─── */
+  async function crearTienda() {
+    const nombre = document.getElementById('ns-nombre').value.trim();
+    if (!nombre) { mostrarToast('El nombre es obligatorio', 'err'); return; }
+    const tipo = document.getElementById('ns-tipo').value;
+    const dir  = document.getElementById('ns-dir').value.trim();
+    try {
+      const res = await fetch('/api/consignacion/tiendas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, tipo, direccion: dir })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      consigData.tiendas.push(data.tienda);
+      toggleNewStoreForm();
+      renderConsig();
+      mostrarToast('Tienda creada', 'ok');
+    } catch (err) {
+      mostrarToast('Error al crear tienda', 'err');
+    }
+  }
+
+  async function guardarEditTienda(sid) {
+    const nombre = document.getElementById('ef-nombre-' + sid).value.trim();
+    const dir    = document.getElementById('ef-dir-' + sid).value.trim();
+    if (!nombre) { mostrarToast('El nombre es obligatorio', 'err'); return; }
+    try {
+      const res = await fetch('/api/consignacion/tiendas/' + sid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, direccion: dir })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const idx = consigData.tiendas.findIndex(t => t.id === sid);
+      if (idx !== -1) { consigData.tiendas[idx].nombre = data.tienda.nombre; consigData.tiendas[idx].direccion = data.tienda.direccion; }
+      renderConsig();
+      mostrarToast('Tienda actualizada', 'ok');
+    } catch (err) {
+      mostrarToast('Error al guardar', 'err');
+    }
+  }
+
+  async function eliminarTienda(sid) {
+    if (!confirm('Eliminar esta tienda y todos sus productos?')) return;
+    try {
+      const res = await fetch('/api/consignacion/tiendas/' + sid, { method: 'DELETE' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      consigData.tiendas = consigData.tiendas.filter(t => t.id !== sid);
+      renderConsig();
+      mostrarToast('Tienda eliminada', 'ok');
+    } catch (err) {
+      mostrarToast('Error al eliminar', 'err');
+    }
+  }
+
+  async function agregarProducto(sid) {
+    const nombre = document.getElementById('ap-nombre-' + sid).value.trim();
+    if (!nombre) { mostrarToast('El nombre es obligatorio', 'err'); return; }
+    const stock = parseInt(document.getElementById('ap-stock-' + sid).value, 10) || 0;
+    const notas = document.getElementById('ap-notas-' + sid).value.trim();
+    try {
+      const res = await fetch('/api/consignacion/tiendas/' + sid + '/productos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, stock, notas })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const tienda = consigData.tiendas.find(t => t.id === sid);
+      if (tienda) tienda.productos.push(data.producto);
+      toggleAddProd(sid);
+      renderConsig();
+      mostrarToast('Producto agregado', 'ok');
+    } catch (err) {
+      mostrarToast('Error al agregar producto', 'err');
+    }
+  }
+
+  async function guardarProd(sid, pid) {
+    const tienda = consigData && consigData.tiendas.find(t => t.id === sid);
+    if (!tienda) return;
+    const prod = tienda.productos.find(p => p.id === pid);
+    if (!prod) return;
+    const nombre = document.getElementById('cp-nombre-' + sid + '-' + pid).value.trim();
+    const stockVal = parseInt(document.getElementById('cp-stock-' + sid + '-' + pid).value, 10);
+    const notas = document.getElementById('cp-notas-' + sid + '-' + pid).value.trim();
+    if (!nombre) return;
+    const stock = isNaN(stockVal) || stockVal < 0 ? prod.stock : stockVal;
+    // skip if nothing changed
+    if (nombre === prod.nombre && stock === prod.stock && notas === (prod.notas || '')) return;
+    try {
+      const res = await fetch('/api/consignacion/tiendas/' + sid + '/productos/' + pid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, stock, notas })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      prod.nombre = data.producto.nombre;
+      prod.stock  = data.producto.stock;
+      prod.notas  = data.producto.notas;
+      const row = document.getElementById('crow-' + sid + '-' + pid);
+      if (row) { row.classList.remove('flash-ok'); void row.offsetWidth; row.classList.add('flash-ok'); }
+      actualizarConsigKPIs();
+      mostrarToast('Guardado', 'ok');
+    } catch (err) {
+      mostrarToast('Error al guardar', 'err');
+    }
+  }
+
+  async function ajustarProd(sid, pid, delta) {
+    const tienda = consigData && consigData.tiendas.find(t => t.id === sid);
+    if (!tienda) return;
+    const prod = tienda.productos.find(p => p.id === pid);
+    if (!prod) return;
+    const nuevoStock = Math.max(0, prod.stock + delta);
+    if (nuevoStock === prod.stock) return;
+    const inputEl = document.getElementById('cp-stock-' + sid + '-' + pid);
+    if (inputEl) inputEl.value = nuevoStock;
+    try {
+      const res = await fetch('/api/consignacion/tiendas/' + sid + '/productos/' + pid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stock: nuevoStock })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      prod.stock = nuevoStock;
+      const row = document.getElementById('crow-' + sid + '-' + pid);
+      if (row) { row.classList.remove('flash-ok'); void row.offsetWidth; row.classList.add('flash-ok'); }
+      actualizarConsigKPIs();
+      mostrarToast('Stock actualizado', 'ok');
+    } catch (err) {
+      if (inputEl) inputEl.value = prod.stock;
+      mostrarToast('Error al guardar', 'err');
+    }
+  }
+
+  async function eliminarProducto(sid, pid) {
+    if (!confirm('Eliminar este producto?')) return;
+    try {
+      const res = await fetch('/api/consignacion/tiendas/' + sid + '/productos/' + pid, { method: 'DELETE' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const tienda = consigData.tiendas.find(t => t.id === sid);
+      if (tienda) tienda.productos = tienda.productos.filter(p => p.id !== pid);
+      renderConsig();
+      mostrarToast('Producto eliminado', 'ok');
+    } catch (err) {
+      mostrarToast('Error al eliminar', 'err');
+    }
   }
 
   /* ─── Boot ─── */

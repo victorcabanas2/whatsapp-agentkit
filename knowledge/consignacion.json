@@ -1,0 +1,13 @@
+{
+  "tiendas": [
+    {
+      "id": "solumedic",
+      "nombre": "Solumedic (Oficina Principal)",
+      "tipo": "principal",
+      "direccion": "Dr Luis Morquio 447, Asunción",
+      "activa": true,
+      "productos": []
+    }
+  ],
+  "ultima_actualizacion": "2026-05-08T19:00:00"
+}
