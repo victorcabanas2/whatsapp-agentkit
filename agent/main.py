@@ -485,10 +485,13 @@ async def _handle_admin_command(msg) -> bool:
 
     # Si el mensaje es "propio" (desde el número del bot), el remitente es el admin por definición
     es_admin = msg.es_propio or (numero_remitente == numero_admin)
+
+    texto = msg.texto.strip() if msg.texto else ""
+    logger.info(f"🔑 CMD CHECK | remitente={numero_remitente} | admin={numero_admin} | es_propio={msg.es_propio} | es_admin={es_admin} | texto='{texto[:60]}'")
+
     if not es_admin:
         return False
 
-    texto = msg.texto.strip() if msg.texto else ""
     if not texto.startswith("/"):
         return False
 
@@ -843,6 +846,18 @@ async def _procesar_mensaje_individual(msg):
     # ── AUDIO: responder con mensaje polite y salir ─────────
     if msg.texto.startswith(("[AUDIO_RECIBIDO", "[AUDIO_SIN_TRANSCRIBIR")):
         await _enviar_respuesta_audio(telefono)
+        return
+
+    # ── FIREWALL: comandos admin que pasaron el buffer ──────
+    # Doble check por si _handle_admin_command no los interceptó en el webhook
+    if msg.texto.strip().startswith("/") and _normalizar_telefono(telefono) == _normalizar_telefono(ADMIN_WHATSAPP):
+        logger.warning(f"⚠️ Comando admin llegó al procesador (debería haberse interceptado antes): {msg.texto[:60]}")
+        await _handle_admin_command(msg)
+        return
+
+    # ── CHAT SILENCIADO: doble check ────────────────────────
+    if _normalizar_telefono(telefono) in MUTED_CHATS:
+        logger.info(f"🔇 Chat silenciado (check en procesador): {telefono}")
         return
 
     logger.info(f"📨 Procesando mensaje de {telefono}: {msg.texto[:80]}...")
@@ -1223,6 +1238,9 @@ async def webhook_handler(request: Request):
                 logger.debug(f"Mensaje vacío de {msg.telefono}")
                 continue
 
+            tel_norm = _normalizar_telefono(msg.telefono)
+            logger.info(f"📞 Mensaje de {tel_norm} | admin esperado: {_normalizar_telefono(ADMIN_WHATSAPP)} | es_admin: {tel_norm == _normalizar_telefono(ADMIN_WHATSAPP)}")
+
             # Comandos admin desde número personal de Victor — procesar de inmediato, sin buffer
             if await _handle_admin_command(msg):
                 continue
@@ -1230,6 +1248,11 @@ async def webhook_handler(request: Request):
             # Pausa global — bot no responde a nadie mientras esté pausado
             if BOT_GLOBAL_PAUSADO:
                 logger.info(f"⏸️ Bot pausado globalmente — ignorando mensaje de {msg.telefono}")
+                continue
+
+            # Chat silenciado — admin tiene el control manual
+            if tel_norm in MUTED_CHATS:
+                logger.info(f"🔇 Chat silenciado: {msg.telefono} — bot no responde")
                 continue
 
             # Audio — responder de inmediato sin buffer
