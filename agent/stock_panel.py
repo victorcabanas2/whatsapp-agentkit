@@ -283,40 +283,40 @@ async def panel_stock():
   <title>Panel de Stock — Rebody</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700;800&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
     :root {
-      --purple:    #8B5CF6;
-      --purple-lt: #C4B5FD;
-      --purple-bg: #EDE9FE;
-      --green:     #10B981;
-      --green-bg:  #D1FAE5;
-      --green-txt: #065F46;
+      --purple:    #083262;
+      --purple-lt: #3a5f96;
+      --purple-bg: #e8eef5;
+      --green:     #00b199;
+      --green-bg:  #d4f5f0;
+      --green-txt: #005a50;
       --amber:     #F59E0B;
       --amber-bg:  #FEF3C7;
       --amber-txt: #92400E;
       --red:       #EF4444;
       --red-bg:    #FEE2E2;
       --red-txt:   #991B1B;
-      --bg:        #FAF5FF;
-      --text:      #1E1B4B;
-      --text-muted:#6B7280;
-      --border:    #E5E7EB;
+      --bg:        #f5f7fa;
+      --text:      #000000;
+      --text-muted:#5a6a7a;
+      --border:    #cdd6df;
       --white:     #FFFFFF;
       --radius-sm: 6px;
       --radius-md: 10px;
       --radius-lg: 16px;
-      --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
-      --shadow-md: 0 4px 16px rgba(139,92,246,.12);
-      --shadow-lg: 0 8px 32px rgba(139,92,246,.18);
+      --shadow-sm: 0 1px 3px rgba(8,50,98,.08);
+      --shadow-md: 0 4px 16px rgba(8,50,98,.12);
+      --shadow-lg: 0 8px 32px rgba(8,50,98,.18);
     }
 
     html { font-size: 16px; }
 
     body {
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
@@ -336,7 +336,7 @@ async def panel_stock():
     }
     .header-left { flex: 1; min-width: 200px; }
     .header-title {
-      font-family: 'Fira Code', monospace;
+      font-family: 'Montserrat', sans-serif;
       font-size: 1.5rem;
       font-weight: 600;
       color: var(--text);
@@ -371,7 +371,7 @@ async def panel_stock():
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       font-size: .875rem;
       font-weight: 600;
       color: var(--white);
@@ -413,7 +413,7 @@ async def panel_stock():
       margin-bottom: 8px;
     }
     .kpi-card .kpi-value {
-      font-family: 'Fira Code', monospace;
+      font-family: 'Montserrat', sans-serif;
       font-size: 2rem;
       font-weight: 600;
       line-height: 1;
@@ -449,7 +449,7 @@ async def panel_stock():
       padding: 10px 12px 10px 38px;
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       font-size: .9rem;
       color: var(--text);
       background: var(--white);
@@ -464,7 +464,7 @@ async def panel_stock():
 
     .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
     .tab {
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       font-size: .8rem;
       font-weight: 600;
       padding: 8px 14px;
@@ -497,7 +497,7 @@ async def panel_stock():
     .category-section.open .category-header { border-radius: var(--radius-md) var(--radius-md) 0 0; border-bottom: none; }
     .category-header:hover { background: var(--purple-bg); }
     .category-name {
-      font-family: 'Fira Code', monospace;
+      font-family: 'Montserrat', sans-serif;
       font-size: .85rem;
       font-weight: 600;
       color: var(--purple);
@@ -506,7 +506,7 @@ async def panel_stock():
       flex: 1;
     }
     .category-count {
-      font-family: 'Fira Code', monospace;
+      font-family: 'Montserrat', sans-serif;
       font-size: .75rem;
       background: var(--purple-bg);
       color: var(--purple);
@@ -571,7 +571,7 @@ async def panel_stock():
 
     /* ── Stock input ── */
     .stock-input {
-      font-family: 'Fira Code', monospace;
+      font-family: 'Montserrat', sans-serif;
       font-size: .95rem;
       font-weight: 500;
       width: 72px;
@@ -695,7 +695,7 @@ async def panel_stock():
       padding-bottom: 0;
     }
     .section-tab {
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       font-size: .9rem;
       font-weight: 600;
       padding: 10px 20px;
@@ -740,7 +740,7 @@ async def panel_stock():
     }
     .store-info { flex: 1; min-width: 0; }
     .store-name {
-      font-family: 'Fira Code', monospace;
+      font-family: 'Montserrat', sans-serif;
       font-size: .95rem;
       font-weight: 600;
       color: var(--text);
@@ -807,7 +807,7 @@ async def panel_stock():
     .consig-table td.td-c { text-align: center; }
 
     .inline-edit {
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       font-size: .88rem;
       width: 100%;
       padding: 5px 8px;
@@ -822,7 +822,7 @@ async def panel_stock():
 
     .consig-stock-wrap { display: flex; align-items: center; justify-content: center; gap: 4px; }
     .consig-stock-input {
-      font-family: 'Fira Code', monospace;
+      font-family: 'Montserrat', sans-serif;
       font-size: .88rem;
       font-weight: 500;
       width: 62px;
@@ -872,7 +872,7 @@ async def panel_stock():
     .inline-form label { font-size: .75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px; }
     .inline-form input[type=text],
     .inline-form input[type=number] {
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       font-size: .85rem;
       padding: 7px 10px;
       border: 1.5px solid var(--border);
@@ -893,7 +893,7 @@ async def panel_stock():
     .inline-form .f-btns   { display: flex; gap: 6px; align-self: flex-end; }
 
     .btn-sm {
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       font-size: .8rem;
       font-weight: 600;
       padding: 7px 14px;
@@ -916,7 +916,7 @@ async def panel_stock():
       background: #FAFAFF;
     }
     .btn-add-prod {
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       font-size: .8rem;
       font-weight: 600;
       color: var(--purple);
@@ -947,7 +947,7 @@ async def panel_stock():
     .new-store-form label { font-size: .75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px; }
     .new-store-form input[type=text],
     .new-store-form select {
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       font-size: .88rem;
       padding: 8px 12px;
       border: 1.5px solid var(--border);
@@ -981,7 +981,7 @@ async def panel_stock():
     .edit-store-form.visible { display: flex; }
     .edit-store-form label { font-size: .75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px; }
     .edit-store-form input[type=text] {
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       font-size: .88rem;
       padding: 7px 10px;
       border: 1.5px solid var(--border);
@@ -1012,7 +1012,7 @@ async def panel_stock():
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      font-family: 'Fira Sans', sans-serif;
+      font-family: 'Raleway', sans-serif;
       font-size: .875rem;
       font-weight: 600;
       color: var(--white);
@@ -1625,7 +1625,12 @@ async def panel_stock():
         <div class="inline-form" id="addprod-form-${sid}">
           <div class="f-nombre">
             <label>Producto *</label>
-            <input type="text" id="ap-nombre-${sid}" placeholder="Nombre del producto">
+            <select id="ap-select-${sid}" onchange="onProdSelectChange('${sid}')">
+              <option value="">— Elegir del catálogo —</option>
+              ${getCatalogOptions()}
+              <option value="__custom__">✏️ Otro (escribir nombre)</option>
+            </select>
+            <input type="text" id="ap-nombre-${sid}" placeholder="Nombre personalizado" style="display:none;margin-top:6px">
           </div>
           <div class="f-stock">
             <label>Stock</label>
@@ -1777,8 +1782,31 @@ async def panel_stock():
     }
   }
 
+  function getCatalogOptions() {
+    if (!stockData || !stockData.productos) return '';
+    return Object.values(stockData.productos)
+      .map(p => `<option value="${escapeHtml(p.nombre)}">${escapeHtml(p.nombre)}</option>`)
+      .join('');
+  }
+
+  function onProdSelectChange(sid) {
+    const sel = document.getElementById('ap-select-' + sid);
+    const customInput = document.getElementById('ap-nombre-' + sid);
+    if (sel.value === '__custom__') {
+      customInput.style.display = 'block';
+      customInput.focus();
+    } else {
+      customInput.style.display = 'none';
+      customInput.value = '';
+    }
+  }
+
   async function agregarProducto(sid) {
-    const nombre = document.getElementById('ap-nombre-' + sid).value.trim();
+    const sel = document.getElementById('ap-select-' + sid);
+    const customInput = document.getElementById('ap-nombre-' + sid);
+    const nombre = (sel && sel.value && sel.value !== '__custom__')
+      ? sel.value
+      : customInput.value.trim();
     if (!nombre) { mostrarToast('El nombre es obligatorio', 'err'); return; }
     const stock = parseInt(document.getElementById('ap-stock-' + sid).value, 10) || 0;
     const notas = document.getElementById('ap-notas-' + sid).value.trim();
