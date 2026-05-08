@@ -103,6 +103,9 @@ def require_admin_session(request: Request):
 # Chats silenciados (admin tomó control)
 MUTED_CHATS = set()  # {telefono1, telefono2, ...}
 
+# Pausa global del bot — cuando True, Belén no responde a nadie
+BOT_GLOBAL_PAUSADO = False
+
 # ════════════════════════════════════════════════════════════
 # BUFFERING DE MENSAJES — Agrupa mensajes rápidos del mismo cliente
 # ════════════════════════════════════════════════════════════
@@ -331,34 +334,52 @@ async def sincronizar_crm(nombre: str, telefono: str, notas: str = ""):
 
 async def enviar_alerta_vendedor(tipo: str, telefono: str, detalle: str = ""):
     """
-    Envía alerta al vendedor vía WhatsApp.
+    Envía alerta al vendedor (Victor) vía WhatsApp.
 
-    Tipos: "nuevo_lead", "hot_lead", "pago_confirmado", "sin_respuesta"
+    Tipos: "nuevo_lead", "hot_lead", "pago_confirmado", "sin_respuesta", "error_critico"
     """
-    if not VENDEDOR_WHATSAPP:
-        logger.warning("⚠️ VENDEDOR_WHATSAPP no configurado - alertas deshabilitadas")
+    destino = ADMIN_WHATSAPP or VENDEDOR_WHATSAPP
+    if not destino:
+        logger.warning("⚠️ ADMIN_WHATSAPP y VENDEDOR_WHATSAPP no configurados - alertas deshabilitadas")
         return
 
     try:
-        mensajes_alerta = {
-            "nuevo_lead": f"🆕 Nuevo lead: {detalle}",
-            "hot_lead": f"🔥 LEAD CALIENTE:\n{detalle}",
-            "pago_confirmado": f"✅ PAGO CONFIRMADO:\n{detalle}",
-            "sin_respuesta": f"⚠️ Sin respuesta (>4h):\n{detalle}"
+        hora = datetime.utcnow().strftime("%H:%M")
+        tel_normalizado = _normalizar_telefono(telefono)
+
+        encabezados = {
+            "nuevo_lead":      "🆕 *NUEVO LEAD*",
+            "hot_lead":        "🔥 *LEAD CALIENTE*",
+            "pago_confirmado": "✅ *PAGO CONFIRMADO*",
+            "sin_respuesta":   "⏰ *SIN RESPUESTA +4h*",
+            "error_critico":   "🚨 *ERROR CRÍTICO*",
         }
+        encabezado = encabezados.get(tipo, f"📢 *ALERTA: {tipo.upper()}*")
 
-        mensaje = mensajes_alerta.get(tipo, detalle)
+        comandos = {
+            "nuevo_lead":      f"/status {tel_normalizado}\n/takeover {tel_normalizado}",
+            "hot_lead":        f"/status {tel_normalizado}\n/takeover {tel_normalizado}",
+            "pago_confirmado": f"/status {tel_normalizado}",
+            "sin_respuesta":   f"/status {tel_normalizado}\n/takeover {tel_normalizado}",
+            "error_critico":   "",
+        }
+        acciones = comandos.get(tipo, "")
 
-        logger.info(f"📢 Enviando alerta al vendedor: {tipo}")
-        exito = await proveedor.enviar_mensaje(VENDEDOR_WHATSAPP, mensaje)
+        mensaje = f"{encabezado}\n{detalle}"
+        if acciones:
+            mensaje += f"\n\n_Comandos rápidos:_\n{acciones}"
+        mensaje += f"\n\n_Hora: {hora} UTC_"
+
+        logger.info(f"📢 Enviando alerta al admin [{tipo}]: {telefono}")
+        exito = await proveedor.enviar_mensaje(destino, mensaje)
 
         if exito:
-            logger.info(f"✓ Alerta enviada al vendedor")
+            logger.info(f"✓ Alerta [{tipo}] enviada al admin")
         else:
-            logger.error(f"✗ Fallo al enviar alerta al vendedor")
+            logger.error(f"✗ Fallo al enviar alerta [{tipo}] al admin")
 
     except Exception as e:
-        logger.error(f"❌ Error enviando alerta: {e}")
+        logger.error(f"❌ Error enviando alerta [{tipo}]: {e}")
 
 
 def detectar_opcion_pago(respuesta_agente: str) -> str | None:
@@ -450,42 +471,248 @@ def _normalizar_telefono(tel: str) -> str:
 
 async def _handle_admin_command(msg) -> bool:
     """
-    Procesa comandos de admin (/takeover, /release).
-    Retorna True si fue un comando admin y fue manejado.
+    Procesa comandos de admin enviados por WhatsApp.
+    Funciona tanto desde el número personal de Victor como desde el número del bot.
+    Retorna True si fue un comando admin reconocido.
     """
-    if _normalizar_telefono(msg.telefono) != _normalizar_telefono(ADMIN_WHATSAPP):
+    global BOT_GLOBAL_PAUSADO
+
+    # Verificar que quien escribe es el admin, sin importar desde qué número llega
+    numero_remitente = _normalizar_telefono(msg.telefono)
+    numero_admin = _normalizar_telefono(ADMIN_WHATSAPP)
+
+    # Si el mensaje es "propio" (desde el número del bot), el remitente es el admin por definición
+    es_admin = msg.es_propio or (numero_remitente == numero_admin)
+    if not es_admin:
         return False
 
-    if msg.texto.startswith("/takeover"):
-        parts = msg.texto.split()
+    texto = msg.texto.strip() if msg.texto else ""
+    if not texto.startswith("/"):
+        return False
+
+    # Número de respuesta: si es mensaje propio, responder al número del destinatario original
+    # Si es mensaje entrante del admin, responder a su número
+    numero_respuesta = ADMIN_WHATSAPP
+
+    # ── /ayuda ─────────────────────────────────────────────
+    if texto in ("/ayuda", "/help", "/comandos"):
+        ayuda = (
+            "🤖 *Comandos de Belén*\n\n"
+            "*Control de chats:*\n"
+            "/takeover 595XXXXXXXXX — tomar control (bot calla)\n"
+            "/release 595XXXXXXXXX — devolver al bot\n"
+            "/pausa — pausar bot para TODOS\n"
+            "/despausar — reactivar bot para todos\n\n"
+            "*Información:*\n"
+            "/leads [N] — últimos N leads (default 5)\n"
+            "/hot — leads calientes (score alto)\n"
+            "/status 595XXXXXXXXX — estado de un cliente\n"
+            "/stats — estadísticas del día\n"
+            "/silenciados — ver chats pausados\n\n"
+            "*Bot:*\n"
+            "/prompt — ver prompt activo de Belén\n"
+            "/test — enviar alerta de prueba"
+        )
+        await proveedor.enviar_mensaje(numero_respuesta, ayuda)
+        return True
+
+    # ── /takeover ──────────────────────────────────────────
+    if texto.startswith("/takeover"):
+        parts = texto.split()
         if len(parts) > 1:
             target = _normalizar_telefono(parts[1])
             from agent.memory import tomar_control
             exito = await tomar_control(target)
             if exito:
                 MUTED_CHATS.add(target)
-                await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} silenciado. Bot no responderá.")
+                await proveedor.enviar_mensaje(numero_respuesta, f"✅ Chat *{target}* silenciado.\nBelén no responderá hasta que uses /release.")
                 logger.info(f"🔇 Admin silencia chat {target}")
             else:
-                await proveedor.enviar_mensaje(msg.telefono, f"❌ No encontré el lead {target}")
+                await proveedor.enviar_mensaje(numero_respuesta, f"❌ No encontré el lead {target}\nVerificá el número con /status {target}")
         else:
-            await proveedor.enviar_mensaje(msg.telefono, "Uso: /takeover 595XXXXXXXXX")
+            await proveedor.enviar_mensaje(numero_respuesta, "Uso: /takeover 595XXXXXXXXX")
         return True
 
-    if msg.texto.startswith("/release"):
-        parts = msg.texto.split()
+    # ── /release ───────────────────────────────────────────
+    if texto.startswith("/release"):
+        parts = texto.split()
         if len(parts) > 1:
             target = _normalizar_telefono(parts[1])
             from agent.memory import liberar_control
             exito = await liberar_control(target)
             if exito:
                 MUTED_CHATS.discard(target)
-                await proveedor.enviar_mensaje(msg.telefono, f"✅ Chat {target} activado. Bot responderá nuevamente.")
+                await proveedor.enviar_mensaje(numero_respuesta, f"✅ Chat *{target}* activado.\nBelén responderá nuevamente.")
                 logger.info(f"🔊 Admin reactiva chat {target}")
             else:
-                await proveedor.enviar_mensaje(msg.telefono, f"❌ No encontré el lead {target}")
+                await proveedor.enviar_mensaje(numero_respuesta, f"❌ No encontré el lead {target}")
         else:
-            await proveedor.enviar_mensaje(msg.telefono, "Uso: /release 595XXXXXXXXX")
+            await proveedor.enviar_mensaje(numero_respuesta, "Uso: /release 595XXXXXXXXX")
+        return True
+
+    # ── /pausa ─────────────────────────────────────────────
+    if texto == "/pausa":
+        BOT_GLOBAL_PAUSADO = True
+        await proveedor.enviar_mensaje(numero_respuesta, "⏸️ *Bot pausado globalmente.*\nBelén no responderá a ningún cliente.\nUsá /despausar para reactivar.")
+        logger.warning("⏸️ Bot pausado globalmente por admin")
+        return True
+
+    # ── /despausar ─────────────────────────────────────────
+    if texto in ("/despausar", "/reactivar", "/unpause"):
+        BOT_GLOBAL_PAUSADO = False
+        await proveedor.enviar_mensaje(numero_respuesta, "▶️ *Bot reactivado.*\nBelén responderá nuevamente a todos los clientes.")
+        logger.info("▶️ Bot reactivado por admin")
+        return True
+
+    # ── /leads [N] ─────────────────────────────────────────
+    if texto.startswith("/leads"):
+        parts = texto.split()
+        limite = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 5
+        try:
+            async with async_session() as session:
+                query = select(Lead).order_by(desc(Lead.ultimo_mensaje)).limit(limite)
+                result = await session.execute(query)
+                leads = result.scalars().all()
+            if not leads:
+                await proveedor.enviar_mensaje(numero_respuesta, "No hay leads registrados aún.")
+            else:
+                lineas = [f"📋 *Últimos {len(leads)} leads:*\n"]
+                for l in leads:
+                    estado = "🔇" if _normalizar_telefono(l.telefono) in MUTED_CHATS else ("🔥" if l.intencion == "hot" else "💬")
+                    nombre = l.nombre or "Sin nombre"
+                    ultimo = l.ultimo_mensaje.strftime("%d/%m %H:%M") if l.ultimo_mensaje else "—"
+                    lineas.append(f"{estado} *{nombre}* ({l.telefono})\nScore: {l.score}/100 | {ultimo}")
+                await proveedor.enviar_mensaje(numero_respuesta, "\n\n".join(lineas))
+        except Exception as e:
+            await proveedor.enviar_mensaje(numero_respuesta, f"❌ Error: {e}")
+        return True
+
+    # ── /hot ───────────────────────────────────────────────
+    if texto == "/hot":
+        try:
+            async with async_session() as session:
+                query = select(Lead).where(Lead.score >= 60).order_by(desc(Lead.score)).limit(10)
+                result = await session.execute(query)
+                leads = result.scalars().all()
+            if not leads:
+                await proveedor.enviar_mensaje(numero_respuesta, "🧊 No hay leads calientes ahora.")
+            else:
+                lineas = [f"🔥 *Leads calientes ({len(leads)}):*\n"]
+                for l in leads:
+                    nombre = l.nombre or "Sin nombre"
+                    urgencia = f" | ⚡ {l.urgencia}" if l.urgencia else ""
+                    lineas.append(f"*{nombre}* ({l.telefono})\nScore: {l.score}/100{urgencia}")
+                await proveedor.enviar_mensaje(numero_respuesta, "\n\n".join(lineas))
+        except Exception as e:
+            await proveedor.enviar_mensaje(numero_respuesta, f"❌ Error: {e}")
+        return True
+
+    # ── /status 595XXXXXXXXX ───────────────────────────────
+    if texto.startswith("/status"):
+        parts = texto.split()
+        if len(parts) > 1:
+            target = _normalizar_telefono(parts[1])
+            try:
+                lead = await obtener_lead(target)
+                if not lead:
+                    await proveedor.enviar_mensaje(numero_respuesta, f"❌ No encontré el lead {target}")
+                else:
+                    silenciado = "🔇 Silenciado (vos tenés el control)" if target in MUTED_CHATS else "🤖 Activo (Belén responde)"
+                    nombre = lead.nombre or "Sin nombre"
+                    primer_contacto = lead.primer_contacto.strftime("%d/%m/%Y") if lead.primer_contacto else "—"
+                    ultimo_msg = lead.ultimo_mensaje.strftime("%d/%m %H:%M") if lead.ultimo_mensaje else "—"
+                    info = (
+                        f"👤 *{nombre}* ({target})\n"
+                        f"Estado: {silenciado}\n"
+                        f"Score: {lead.score}/100\n"
+                        f"Intención: {lead.intencion or '—'}\n"
+                        f"Urgencia: {lead.urgencia or '—'}\n"
+                        f"Objeciones: {lead.objeciones or '—'}\n"
+                        f"Primer contacto: {primer_contacto}\n"
+                        f"Último mensaje: {ultimo_msg}\n"
+                        f"Cliente: {'Sí ✅' if lead.fue_cliente else 'No'}"
+                    )
+                    await proveedor.enviar_mensaje(numero_respuesta, info)
+            except Exception as e:
+                await proveedor.enviar_mensaje(numero_respuesta, f"❌ Error: {e}")
+        else:
+            await proveedor.enviar_mensaje(numero_respuesta, "Uso: /status 595XXXXXXXXX")
+        return True
+
+    # ── /stats ─────────────────────────────────────────────
+    if texto == "/stats":
+        try:
+            hoy = datetime.utcnow().date()
+            async with async_session() as session:
+                # Leads de hoy
+                q_hoy = select(func.count()).select_from(Lead).where(
+                    func.date(Lead.primer_contacto) == hoy
+                )
+                leads_hoy = (await session.execute(q_hoy)).scalar() or 0
+
+                # Total leads
+                q_total = select(func.count()).select_from(Lead)
+                leads_total = (await session.execute(q_total)).scalar() or 0
+
+                # Leads calientes
+                q_hot = select(func.count()).select_from(Lead).where(Lead.score >= 60)
+                leads_hot = (await session.execute(q_hot)).scalar() or 0
+
+                # Mensajes de hoy
+                q_msgs = select(func.count()).select_from(Mensaje).where(
+                    func.date(Mensaje.timestamp) == hoy
+                )
+                msgs_hoy = (await session.execute(q_msgs)).scalar() or 0
+
+                # Silenciados
+                silenciados = len(MUTED_CHATS)
+
+            estado_bot = "⏸️ PAUSADO" if BOT_GLOBAL_PAUSADO else "▶️ Activo"
+            stats_msg = (
+                f"📊 *Estadísticas — {hoy.strftime('%d/%m/%Y')}*\n\n"
+                f"Bot: {estado_bot}\n"
+                f"Leads nuevos hoy: {leads_hoy}\n"
+                f"Total leads: {leads_total}\n"
+                f"Leads calientes: {leads_hot}\n"
+                f"Mensajes hoy: {msgs_hoy}\n"
+                f"Chats silenciados: {silenciados}"
+            )
+            await proveedor.enviar_mensaje(numero_respuesta, stats_msg)
+        except Exception as e:
+            await proveedor.enviar_mensaje(numero_respuesta, f"❌ Error generando stats: {e}")
+        return True
+
+    # ── /silenciados ───────────────────────────────────────
+    if texto == "/silenciados":
+        if not MUTED_CHATS:
+            await proveedor.enviar_mensaje(numero_respuesta, "✅ No hay chats silenciados. Belén atiende a todos.")
+        else:
+            lineas = [f"🔇 *Chats silenciados ({len(MUTED_CHATS)}):*\n"]
+            for tel in MUTED_CHATS:
+                lead = await obtener_lead(tel)
+                nombre = lead.nombre if lead and lead.nombre else "Sin nombre"
+                lineas.append(f"• *{nombre}* ({tel})\n  /release {tel}")
+            await proveedor.enviar_mensaje(numero_respuesta, "\n\n".join(lineas))
+        return True
+
+    # ── /prompt ────────────────────────────────────────────
+    if texto == "/prompt":
+        try:
+            import yaml
+            prompt_path = os.path.join(os.path.dirname(__file__), "..", "config", "prompts.yaml")
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            system_prompt = data.get("system_prompt", "")
+            preview = system_prompt[:800] + ("..." if len(system_prompt) > 800 else "")
+            await proveedor.enviar_mensaje(numero_respuesta, f"📝 *Prompt activo de Belén (primeros 800 chars):*\n\n{preview}")
+        except Exception as e:
+            await proveedor.enviar_mensaje(numero_respuesta, f"❌ Error leyendo prompt: {e}")
+        return True
+
+    # ── /test ──────────────────────────────────────────────
+    if texto == "/test":
+        hora = datetime.utcnow().strftime("%H:%M UTC")
+        await proveedor.enviar_mensaje(numero_respuesta, f"✅ Belén activa y respondiendo.\nHora: {hora}\nBot pausado: {'Sí' if BOT_GLOBAL_PAUSADO else 'No'}\nChats silenciados: {len(MUTED_CHATS)}")
         return True
 
     return False
@@ -972,6 +1199,11 @@ async def webhook_handler(request: Request):
                     AD_CONTEXT_BY_PHONE[msg.telefono] = {"is_ad": True, "payload": None, "headline": None, "ad_url": None}
                     logger.info(f"📢 Auto-greeting detectado, marcado como ad: {msg.telefono}")
 
+                # Comandos admin escritos desde el mismo número del bot (es_propio=True)
+                if msg.texto and msg.texto.strip().startswith("/"):
+                    if await _handle_admin_command(msg):
+                        continue
+
                 # Distinguir ecos del bot vs mensajes manuales de Victor
                 _key = f"{msg.telefono}:{msg.texto[:80]}"
                 _now = datetime.utcnow().timestamp()
@@ -989,8 +1221,13 @@ async def webhook_handler(request: Request):
                 logger.debug(f"Mensaje vacío de {msg.telefono}")
                 continue
 
-            # Comandos admin — procesar de inmediato, sin buffer
+            # Comandos admin desde número personal de Victor — procesar de inmediato, sin buffer
             if await _handle_admin_command(msg):
+                continue
+
+            # Pausa global — bot no responde a nadie mientras esté pausado
+            if BOT_GLOBAL_PAUSADO:
+                logger.info(f"⏸️ Bot pausado globalmente — ignorando mensaje de {msg.telefono}")
                 continue
 
             # Audio — responder de inmediato sin buffer
