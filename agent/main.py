@@ -1113,14 +1113,10 @@ async def _procesar_mensaje_individual(msg):
             logger.info(f"✗ Cliente marcó como desistido: {telefono}")
 
         # ── ALERTAS AL VENDEDOR ─────────────────────────────
+        # CRM sync para nuevos leads (sin alerta WhatsApp — se notifica solo cuando está caliente)
         if es_nuevo_lead and not lead.alerta_vendedor_enviada:
             nombre = lead.nombre or telefono
-            await enviar_alerta_vendedor(
-                "nuevo_lead", telefono,
-                f"{nombre} ({telefono})\nDice: '{msg.texto[:80]}...'"
-            )
             await marcar_alerta_vendedor(telefono)
-            # CRM sync es independiente del flag alerta_vendedor_enviada — corre en background
             asyncio.create_task(sincronizar_crm(nombre, telefono, f"Primer mensaje: {msg.texto[:120]}"))
 
         if (score_anterior < 50 or intencion_anterior != "hot") and lead.intencion == "hot":

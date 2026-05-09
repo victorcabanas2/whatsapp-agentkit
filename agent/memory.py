@@ -1013,26 +1013,37 @@ async def obtener_leads_para_seguimiento_3() -> list[Lead]:
 async def obtener_leads_para_seguimiento_domingo() -> list[Lead]:
     """
     Leads para seguimiento dominical (todos los domingos 14:00):
-    - Recibieron al menos 1 seguimiento
+    - Recibieron al menos 1 seguimiento pero menos de 4 en total
+    - El último seguimiento fue un lunes, martes o miércoles (weekday < 3)
     - Nunca respondieron
     - No desistidos, no clientes
+    El filtro de día de semana se aplica en Python después del query.
     """
     async with async_session() as session:
-        hace_7dias = datetime.utcnow() - timedelta(days=7)  # No más de 7 días
+        hace_7dias = datetime.utcnow() - timedelta(days=7)
         query = (
             select(Lead)
             .where(Lead.seguimiento_mismo_dia_enviado == True)
+            .where(Lead.seguimientos_enviados < 4)  # máximo 4 seguimientos totales (3 + domingo)
             .where(Lead.fue_cliente == False)
             .where(Lead.desistido == False)
             .where(Lead.en_manos_humanas == False)
             .where(Lead.primer_contacto >= hace_7dias)
+            .where(Lead.fecha_ultimo_seguimiento != None)
             .where(
                 (Lead.ultimo_mensaje_usuario == None) |
                 (Lead.ultimo_mensaje_usuario <= Lead.primer_contacto + timedelta(minutes=30))
             )
         )
         result = await session.execute(query)
-        return result.scalars().all()
+        candidatos = result.scalars().all()
+
+        # Solo incluir leads cuyo último seguimiento fue lun/mar/mié (weekday 0, 1, 2)
+        # Si fue jue/vie/sáb el domingo es muy pronto (< 4 días de distancia)
+        return [
+            lead for lead in candidatos
+            if lead.fecha_ultimo_seguimiento and lead.fecha_ultimo_seguimiento.weekday() < 3
+        ]
 
 
 # Aliases para compatibilidad con código existente
@@ -2035,20 +2046,18 @@ async def validar_integridad_referencial() -> dict:
 
 async def obtener_leads_para_seguimiento_unificado() -> list[Lead]:
     """
-    Query unificada que reemplaza obtener_leads_para_seguimiento_1/2/3
-    y obtener_leads_sin_ningun_seguimiento.
+    Query unificada para los 3 seguimientos automáticos.
 
-    Reglas:
-    - Menos de 3 seguimientos enviados
-    - 3+ horas desde primer contacto
-    - No envió seguimiento en las últimas 20h (o nunca envió)
-    - Lead frío: nunca respondió o su última respuesta fue hace 20+ horas
-    - Sin límite superior de tiempo — resiste reinicios de Railway
+    Timing:
+    - Seguimiento 1: 3+ horas desde primer contacto (mismo día)
+    - Seguimiento 2: 20+ horas desde el seguimiento anterior (día siguiente)
+    - Seguimiento 3: solo si han pasado 4+ días desde primer contacto
     """
     MAX_FOLLOW_UPS = 3
     ahora = datetime.utcnow()
     hace_3h = ahora - timedelta(hours=3)
     hace_20h = ahora - timedelta(hours=20)
+    hace_4dias = ahora - timedelta(days=4)
 
     async with async_session() as session:
         query = (
@@ -2069,6 +2078,11 @@ async def obtener_leads_para_seguimiento_unificado() -> list[Lead]:
                 (Lead.ultimo_mensaje_usuario == None) |
                 (Lead.ultimo_mensaje_usuario <= Lead.primer_contacto + timedelta(minutes=30)) |
                 (Lead.ultimo_mensaje_usuario <= hace_20h)
+            )
+            # Seguimiento 3 solo si pasaron 4+ días desde el primer contacto
+            .where(
+                (Lead.seguimientos_enviados < 2) |
+                (Lead.primer_contacto <= hace_4dias)
             )
             .order_by(Lead.primer_contacto.asc())
         )

@@ -234,6 +234,8 @@ def mapear_anuncio_a_producto(anuncio_id: str) -> str:
         # TheraCup
         "theracup": "TheraCup",
         "ventosa": "TheraCup",
+        "ventosas inteligentes": "TheraCup",
+        "ventosa inteligente": "TheraCup",
     }
 
     # Buscar coincidencias en el ID del anuncio
@@ -479,7 +481,7 @@ async def obtener_contexto_stock() -> str:
 _PALABRAS_PRODUCTO = {
     "whoop", "theragun", "jetboots", "foreo", "theraface", "wavesolo",
     "smartgoggles", "sleepmas", "thermback", "theracup", "recovery",
-    "wand", "mask", "goggles", "mini", "sense", "prime",
+    "wand", "mask", "goggles", "mini", "sense", "prime", "ventosa",
 }
 
 

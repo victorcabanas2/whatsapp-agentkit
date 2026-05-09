@@ -133,7 +133,11 @@ async def job_promo_domingo():
 
 
 async def job_seguimiento_domingo():
-    """Seguimiento dominical contextual con Claude."""
+    """
+    Seguimiento dominical contextual con Claude.
+    Solo aplica si el último seguimiento fue lunes, martes o miércoles.
+    Cuenta contra el límite de seguimientos para evitar superar 4 en total.
+    """
     try:
         logger.info("📅 Ejecutando: Seguimiento DOMINGO")
         leads = await obtener_leads_para_seguimiento_domingo()
@@ -145,10 +149,12 @@ async def job_seguimiento_domingo():
             historial = await obtener_historial(lead.telefono, limite=20)
             mensaje = await generar_mensaje_seguimiento_contextual(lead, historial, "domingo")
             if mensaje is None:
+                await actualizar_fecha_ultimo_seguimiento(lead.telefono)
                 logger.info(f"🚫 Seguimiento domingo omitido → {lead.telefono}")
                 continue
             exito = await proveedor.enviar_mensaje(lead.telefono, mensaje)
             if exito:
+                await marcar_seguimiento_enviado(lead.telefono)  # cuenta contra el límite total
                 logger.info(f"✓ Seguimiento domingo enviado → {lead.telefono}")
             else:
                 logger.error(f"✗ Fallo envío domingo → {lead.telefono}")
