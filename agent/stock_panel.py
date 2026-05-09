@@ -40,6 +40,8 @@ class ProductoCreate(BaseModel):
     nombre: str
     stock: int = 0
     notas: Optional[str] = ""
+    fecha_entrega: Optional[str] = ""
+    recibido_por: Optional[str] = ""
 
 class ProductoUpdate(BaseModel):
     nombre: Optional[str] = None
@@ -50,11 +52,12 @@ class ProductoUpdate(BaseModel):
 class MovimientoCreate(BaseModel):
     tipo: str  # "venta" | "reposicion" | "retiro" | "ajuste"
     producto: str
-    cantidad: int
+    cantidad: int  # para ajuste puede ser negativo
     ubicacion: str = "Solumedic"
     precio_venta: float = 0.0
     notas: str = ""
     fecha: str = ""  # ISO date string; si vacío usa now()
+    recibido_por: str = ""
 
 
 # ── Consignacion helpers ──
@@ -183,7 +186,22 @@ async def subtract_stock(product_id: str, cantidad: int = 1):
 
 @router.get("/api/consignacion")
 async def get_consignacion():
-    return load_consig()
+    data = load_consig()
+    stock_data = load_stock()
+    for tienda in data["tiendas"]:
+        if tienda.get("tipo") == "principal":
+            tienda["productos"] = [
+                {
+                    "id": prod_id,
+                    "nombre": prod["nombre"],
+                    "stock": prod["stock"],
+                    "notas": "",
+                    "fecha_entrega": prod.get("timestamp", ""),
+                    "recibido_por": "",
+                }
+                for prod_id, prod in stock_data.get("productos", {}).items()
+            ]
+    return data
 
 
 @router.post("/api/consignacion/tiendas")
@@ -235,6 +253,8 @@ async def agregar_producto(store_id: str, body: ProductoCreate):
     tienda = next((t for t in data["tiendas"] if t["id"] == store_id), None)
     if not tienda:
         raise HTTPException(status_code=404, detail="Tienda no encontrada")
+    if tienda.get("tipo") == "principal":
+        raise HTTPException(status_code=403, detail="Usa Stock Principal para agregar productos a esta tienda")
     if body.stock < 0:
         raise HTTPException(status_code=400, detail="Stock no puede ser negativo")
     nuevo = {
@@ -242,6 +262,8 @@ async def agregar_producto(store_id: str, body: ProductoCreate):
         "nombre": body.nombre.strip(),
         "stock": body.stock,
         "notas": body.notas or "",
+        "fecha_entrega": body.fecha_entrega or datetime.now().isoformat(),
+        "recibido_por": body.recibido_por or "",
         "timestamp": datetime.now().isoformat()
     }
     tienda["productos"].append(nuevo)
@@ -255,6 +277,25 @@ async def actualizar_producto(store_id: str, prod_id: str, body: ProductoUpdate)
     tienda = next((t for t in data["tiendas"] if t["id"] == store_id), None)
     if not tienda:
         raise HTTPException(status_code=404, detail="Tienda no encontrada")
+
+    # Tienda principal: redirigir a stock_actual.json
+    if tienda.get("tipo") == "principal":
+        stock_data = load_stock()
+        if prod_id not in stock_data["productos"]:
+            raise HTTPException(status_code=404, detail="Producto no encontrado en stock principal")
+        prod_s = stock_data["productos"][prod_id]
+        if body.stock is not None:
+            if body.stock < 0:
+                raise HTTPException(status_code=400, detail="Stock no puede ser negativo")
+            prod_s["stock"] = body.stock
+            prod_s["disponible"] = body.stock > 0
+        prod_s["timestamp"] = datetime.now().isoformat()
+        save_stock(stock_data)
+        return {"status": "ok", "producto": {
+            "id": prod_id, "nombre": prod_s["nombre"],
+            "stock": prod_s["stock"], "notas": "",
+        }}
+
     prod = next((p for p in tienda["productos"] if p["id"] == prod_id), None)
     if not prod:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
@@ -277,6 +318,8 @@ async def eliminar_producto(store_id: str, prod_id: str):
     tienda = next((t for t in data["tiendas"] if t["id"] == store_id), None)
     if not tienda:
         raise HTTPException(status_code=404, detail="Tienda no encontrada")
+    if tienda.get("tipo") == "principal":
+        raise HTTPException(status_code=403, detail="Elimina el producto desde la pestana Stock Principal")
     original = len(tienda["productos"])
     tienda["productos"] = [p for p in tienda["productos"] if p["id"] != prod_id]
     if len(tienda["productos"]) == original:
@@ -328,8 +371,13 @@ async def get_movimientos(tipo: str = "", desde: str = "", hasta: str = "", prod
 async def crear_movimiento(body: MovimientoCreate):
     if body.tipo not in ("venta", "reposicion", "retiro", "ajuste"):
         raise HTTPException(status_code=400, detail="Tipo invalido")
-    if body.cantidad < 1:
-        raise HTTPException(status_code=400, detail="Cantidad debe ser >= 1")
+    if body.tipo == "ajuste":
+        if body.cantidad == 0:
+            raise HTTPException(status_code=400, detail="Cantidad no puede ser 0")
+    else:
+        if body.cantidad < 1:
+            raise HTTPException(status_code=400, detail="Cantidad debe ser >= 1")
+
     data = load_movimientos()
     nuevo = {
         "id": uuid.uuid4().hex[:8],
@@ -340,9 +388,103 @@ async def crear_movimiento(body: MovimientoCreate):
         "precio_venta": body.precio_venta,
         "notas": body.notas or "",
         "fecha": body.fecha if body.fecha else datetime.now().isoformat(),
+        "recibido_por": body.recibido_por or "",
     }
     data["movimientos"].insert(0, nuevo)
     save_movimientos(data)
+
+    # ── Aplicar efecto en stock automáticamente ──
+    ubicacion = (body.ubicacion or "Solumedic").strip()
+    nombre_prod = body.producto.strip().lower()
+    cantidad = body.cantidad
+    tipo = body.tipo
+
+    consig = load_consig()
+    tienda = next((t for t in consig["tiendas"] if t["nombre"].strip().lower() == ubicacion.lower()), None)
+
+    if tienda and tienda.get("tipo") == "principal":
+        # Tienda principal → misma lógica que stock_actual directamente
+        stock_d = load_stock()
+        prod_p = next((p for p in stock_d["productos"].values() if p["nombre"].strip().lower() == nombre_prod), None)
+        if prod_p:
+            if tipo == "reposicion":
+                prod_p["stock"] = prod_p["stock"] + cantidad
+            elif tipo in ("venta", "retiro"):
+                prod_p["stock"] = max(0, prod_p["stock"] - cantidad)
+            elif tipo == "ajuste":
+                prod_p["stock"] = max(0, prod_p["stock"] + cantidad)
+            prod_p["disponible"] = prod_p["stock"] > 0
+            prod_p["timestamp"] = datetime.now().isoformat()
+            save_stock(stock_d)
+    elif tienda:
+        # Ubicación es una tienda de consignación
+        prod_c = next((p for p in tienda["productos"] if p["nombre"].strip().lower() == nombre_prod), None)
+
+        if tipo == "reposicion":
+            if prod_c:
+                prod_c["stock"] = max(0, prod_c["stock"] + cantidad)
+                prod_c["timestamp"] = datetime.now().isoformat()
+            else:
+                tienda["productos"].append({
+                    "id": uuid.uuid4().hex[:8],
+                    "nombre": body.producto.strip(),
+                    "stock": cantidad,
+                    "notas": "",
+                    "fecha_entrega": datetime.now().isoformat(),
+                    "recibido_por": body.recibido_por or "",
+                    "timestamp": datetime.now().isoformat(),
+                })
+            save_consig(consig)
+            # Descuenta del stock principal
+            stock_d = load_stock()
+            prod_p = next((p for p in stock_d["productos"].values() if p["nombre"].strip().lower() == nombre_prod), None)
+            if prod_p:
+                prod_p["stock"] = max(0, prod_p["stock"] - cantidad)
+                prod_p["disponible"] = prod_p["stock"] > 0
+                prod_p["timestamp"] = datetime.now().isoformat()
+                save_stock(stock_d)
+
+        elif tipo == "venta":
+            if prod_c:
+                prod_c["stock"] = max(0, prod_c["stock"] - cantidad)
+                prod_c["timestamp"] = datetime.now().isoformat()
+                save_consig(consig)
+
+        elif tipo == "retiro":
+            if prod_c:
+                prod_c["stock"] = max(0, prod_c["stock"] - cantidad)
+                prod_c["timestamp"] = datetime.now().isoformat()
+                save_consig(consig)
+            # Suma en stock principal
+            stock_d = load_stock()
+            prod_p = next((p for p in stock_d["productos"].values() if p["nombre"].strip().lower() == nombre_prod), None)
+            if prod_p:
+                prod_p["stock"] = prod_p["stock"] + cantidad
+                prod_p["disponible"] = True
+                prod_p["timestamp"] = datetime.now().isoformat()
+                save_stock(stock_d)
+
+        elif tipo == "ajuste":
+            if prod_c:
+                prod_c["stock"] = max(0, prod_c["stock"] + cantidad)
+                prod_c["timestamp"] = datetime.now().isoformat()
+                save_consig(consig)
+
+    else:
+        # Ubicación es stock principal
+        stock_d = load_stock()
+        prod_p = next((p for p in stock_d["productos"].values() if p["nombre"].strip().lower() == nombre_prod), None)
+        if prod_p:
+            if tipo == "reposicion":
+                prod_p["stock"] = prod_p["stock"] + cantidad
+            elif tipo == "venta":
+                prod_p["stock"] = max(0, prod_p["stock"] - cantidad)
+            elif tipo == "ajuste":
+                prod_p["stock"] = max(0, prod_p["stock"] + cantidad)
+            prod_p["disponible"] = prod_p["stock"] > 0
+            prod_p["timestamp"] = datetime.now().isoformat()
+            save_stock(stock_d)
+
     return {"status": "ok", "movimiento": nuevo}
 
 
@@ -1298,6 +1440,17 @@ async def panel_stock():
           <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Fecha</label>
           <input type="date" id="mf-fecha" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
         </div>
+        <div id="mf-signo-wrap" style="display:none;min-width:100px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Direccion</label>
+          <select id="mf-signo" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+            <option value="1">+ Sumar</option>
+            <option value="-1">− Restar</option>
+          </select>
+        </div>
+        <div style="min-width:140px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Recibido por</label>
+          <input type="text" id="mf-recibido" placeholder="Nombre..." onkeydown="if(event.key==='Enter'){event.preventDefault();registrarMovimiento()}" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+        </div>
         <div style="flex:2;min-width:160px">
           <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Notas</label>
           <input type="text" id="mf-notas" placeholder="Opcional" onkeydown="if(event.key==='Enter'){event.preventDefault();registrarMovimiento()}" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
@@ -1319,13 +1472,14 @@ async def panel_stock():
             <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Producto</th>
             <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:center;border-bottom:1px solid var(--border)">Cant.</th>
             <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Ubicacion</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Recibido por</th>
             <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:right;border-bottom:1px solid var(--border)">Precio</th>
             <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Notas</th>
             <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:center;border-bottom:1px solid var(--border)">Acciones</th>
           </tr>
         </thead>
         <tbody id="mov-tbody">
-          <tr><td colspan="8" class="state-msg">Cargando...</td></tr>
+          <tr><td colspan="9" class="state-msg">Cargando...</td></tr>
         </tbody>
       </table>
     </div>
@@ -1402,6 +1556,7 @@ async def panel_stock():
   /* ─── State ─── */
   let stockData = {};
   let tabActivo = 'todos';
+  let storeCollapsed = {};
   let refreshTimer = null;
 
   /* ─── Categorization ─── */
@@ -1786,7 +1941,7 @@ async def panel_stock():
       filtrarMovimientos();
     } catch(err) {
       document.getElementById('mov-tbody').innerHTML =
-        '<tr><td colspan="8" class="state-msg">Error al cargar movimientos</td></tr>';
+        '<tr><td colspan="9" class="state-msg">Error al cargar movimientos</td></tr>';
       mostrarToast('Error al cargar movimientos', 'err');
     }
   }
@@ -1796,7 +1951,7 @@ async def panel_stock():
     actualizarMovKPIs(movimientosData ? (movimientosData.movimientos || []) : []);
     const tbody = document.getElementById('mov-tbody');
     if (!movs || movs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="state-msg">Sin movimientos registrados aun.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="state-msg">Sin movimientos registrados aun.</td></tr>';
       return;
     }
     tbody.innerHTML = movs.map(m => `
@@ -1804,8 +1959,9 @@ async def panel_stock():
         <td style="padding:10px 14px;font-size:.82rem;white-space:nowrap">${formatFechaMov(m.fecha)}</td>
         <td style="padding:10px 14px">${badgeMov(m.tipo)}</td>
         <td style="padding:10px 14px;font-size:.88rem;font-weight:500">${escapeHtml(m.producto)}</td>
-        <td style="padding:10px 14px;text-align:center;font-family:Montserrat,sans-serif;font-weight:600">${m.cantidad}</td>
+        <td style="padding:10px 14px;text-align:center;font-family:Montserrat,sans-serif;font-weight:600">${m.cantidad > 0 ? '+'+m.cantidad : m.cantidad}</td>
         <td style="padding:10px 14px;font-size:.85rem;color:var(--text-muted)">${escapeHtml(m.ubicacion||'')}</td>
+        <td style="padding:10px 14px;font-size:.82rem;color:var(--text-muted)">${escapeHtml(m.recibido_por||'—')}</td>
         <td style="padding:10px 14px;text-align:right;font-size:.82rem;font-family:Montserrat,sans-serif">${m.precio_venta ? formatGs(m.precio_venta) : '—'}</td>
         <td style="padding:10px 14px;font-size:.82rem;color:var(--text-muted)">${escapeHtml(m.notas||'')}</td>
         <td style="padding:10px 14px;text-align:center">
@@ -1846,27 +2002,36 @@ async def panel_stock():
   async function registrarMovimiento() {
     const tipo     = document.getElementById('mf-tipo').value;
     const prodSel  = document.getElementById('mf-producto').value.trim();
-    const cantidad = parseInt(document.getElementById('mf-cantidad').value, 10);
+    const cantRaw  = parseInt(document.getElementById('mf-cantidad').value, 10);
     const ubicacion= document.getElementById('mf-ubicacion').value;
     const precio   = parseFloat(document.getElementById('mf-precio').value) || 0;
     const fechaVal = document.getElementById('mf-fecha').value;
     const notas    = document.getElementById('mf-notas').value.trim();
+    const recibido_por = document.getElementById('mf-recibido').value.trim();
     if (!prodSel) { mostrarToast('Selecciona un producto', 'err'); return; }
-    if (!cantidad || cantidad < 1) { mostrarToast('Cantidad invalida', 'err'); return; }
+    if (!cantRaw || cantRaw < 1) { mostrarToast('Cantidad invalida', 'err'); return; }
+    let cantidad = cantRaw;
+    if (tipo === 'ajuste') {
+      const signo = parseInt(document.getElementById('mf-signo').value, 10);
+      cantidad = cantRaw * signo;
+    }
     const fecha = fechaVal ? fechaVal + 'T00:00:00' : '';
     try {
       const res = await fetch('/api/movimientos', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ tipo, producto: prodSel, cantidad, ubicacion, precio_venta: precio, notas, fecha })
+        body: JSON.stringify({ tipo, producto: prodSel, cantidad, ubicacion, precio_venta: precio, notas, fecha, recibido_por })
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       if (!movimientosData) movimientosData = { movimientos: [] };
       movimientosData.movimientos.unshift(data.movimiento);
+      // Recargar stock y consignacion para reflejar cambios automaticos
+      await cargarStock();
+      await cargarConsig();
       toggleMovForm();
       filtrarMovimientos();
-      mostrarToast('Movimiento registrado', 'ok');
+      mostrarToast('Movimiento registrado — stock actualizado', 'ok');
     } catch(err) {
       mostrarToast('Error al registrar movimiento', 'err');
     }
@@ -1911,32 +2076,38 @@ async def panel_stock():
           else this.value = '';
         }
       };
-      // populate ubicacion from consig + Solumedic
-      const uSel = document.getElementById('mf-ubicacion');
-      uSel.innerHTML = '<option value="Solumedic">Solumedic</option>';
-      if (consigData && consigData.tiendas) {
-        consigData.tiendas.forEach(t => {
-          if (t.id !== 'solumedic') {
-            const opt = document.createElement('option');
-            opt.value = t.nombre; opt.textContent = t.nombre;
-            uSel.appendChild(opt);
-          }
-        });
-      }
       // default fecha = hoy
       const today = new Date().toISOString().slice(0,10);
       document.getElementById('mf-fecha').value = today;
-      onMovTipoChange();
+      if (!consigData) {
+        cargarConsig().then(() => onMovTipoChange());
+      } else {
+        onMovTipoChange();
+      }
     } else {
       document.getElementById('mf-cantidad').value = '1';
       document.getElementById('mf-precio').value = '0';
       document.getElementById('mf-notas').value = '';
+      document.getElementById('mf-recibido').value = '';
     }
   }
 
   function onMovTipoChange() {
     const tipo = document.getElementById('mf-tipo').value;
     document.getElementById('mf-precio-wrap').style.display = tipo === 'venta' ? '' : 'none';
+    document.getElementById('mf-signo-wrap').style.display = tipo === 'ajuste' ? '' : 'none';
+    // Retiro y Reposicion: solo tiendas de consignacion (no Solumedic)
+    // Venta y Ajuste: todas las ubicaciones
+    const soloConsig = tipo === 'retiro' || tipo === 'reposicion';
+    const uSel = document.getElementById('mf-ubicacion');
+    uSel.innerHTML = soloConsig ? '<option value="">— Seleccionar tienda —</option>' : '<option value="Solumedic">Solumedic (Stock Principal)</option>';
+    if (consigData && consigData.tiendas) {
+      consigData.tiendas.filter(t => t.tipo !== 'principal').forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.nombre; opt.textContent = t.nombre;
+        uSel.appendChild(opt);
+      });
+    }
   }
 
   /* ─── Consignacion state ─── */
@@ -1959,7 +2130,7 @@ async def panel_stock():
   /* ─── Consignacion KPIs ─── */
   function actualizarConsigKPIs() {
     if (!consigData) return;
-    const tiendas = consigData.tiendas || [];
+    const tiendas = (consigData.tiendas || []).filter(t => t.tipo !== 'principal');
     const unidades = tiendas.reduce((sum, t) =>
       sum + (t.productos || []).reduce((s, p) => s + (p.stock || 0), 0), 0);
     document.getElementById('ckpi-tiendas').textContent = tiendas.length;
@@ -1979,7 +2150,12 @@ async def panel_stock():
       container.innerHTML = '<div class="state-msg">Sin tiendas registradas. Agrega una con "Nueva tienda".</div>';
       return;
     }
-    container.innerHTML = tiendas.map(t => renderStoreCard(t)).join('');
+    const tiendasConsig = tiendas.filter(t => t.tipo !== 'principal');
+    if (tiendasConsig.length === 0) {
+      container.innerHTML = '<div class="state-msg">Sin tiendas en consignacion. Agrega una con "Nueva tienda".</div>';
+      return;
+    }
+    container.innerHTML = tiendasConsig.map(t => renderStoreCard(t)).join('');
   }
 
   function renderStoreCard(tienda) {
@@ -1996,18 +2172,24 @@ async def panel_stock():
          </button>` : '';
     const prods = tienda.productos || [];
     const filas = prods.length > 0
-      ? prods.map(p => renderProdFila(sid, p)).join('')
-      : `<tr><td colspan="4" class="consig-empty">Sin productos. Agrega uno abajo.</td></tr>`;
+      ? prods.map(p => renderProdFila(sid, p, esPrincipal)).join('')
+      : esPrincipal
+        ? `<tr><td colspan="4" class="consig-empty">Sin productos en Stock Principal.</td></tr>`
+        : `<tr><td colspan="4" class="consig-empty">Sin productos. Agrega uno abajo.</td></tr>`;
 
+    const collapsed = !!storeCollapsed[sid];
     return `
       <div class="store-card" id="store-${sid}">
-        <div class="store-header">
+        <div class="store-header" style="cursor:pointer" onclick="toggleStoreCollapse('${sid}')">
           <div class="store-info">
             <div class="store-name">${escapeHtml(tienda.nombre)}</div>
             ${tienda.direccion ? `<div class="store-addr">${escapeHtml(tienda.direccion)}</div>` : ''}
           </div>
           ${tipoBadge}
-          <div class="store-actions">
+          <span style="color:var(--text-muted);margin-left:4px;transition:transform .2s;display:inline-block;transform:${collapsed ? 'rotate(-90deg)' : 'rotate(0deg)'}" id="chevron-${sid}">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+          </span>
+          <div class="store-actions" onclick="event.stopPropagation()">
             <button class="btn-icon" onclick="toggleEditStore('${sid}')" title="Editar tienda">
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
@@ -2030,7 +2212,7 @@ async def panel_stock():
             <button class="btn-sm secondary" onclick="toggleEditStore('${sid}')">Cancelar</button>
           </div>
         </div>
-        <div class="store-body">
+        <div class="store-body" id="store-body-${sid}" style="${collapsed ? 'display:none' : ''}">
           <table class="consig-table">
             <thead>
               <tr>
@@ -2063,28 +2245,52 @@ async def panel_stock():
             <label>Notas</label>
             <input type="text" id="ap-notas-${sid}" placeholder="Opcional" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarProducto('${sid}')}">
           </div>
+          <div class="f-nombre" style="min-width:130px">
+            <label>Fecha entrega</label>
+            <input type="date" id="ap-fecha-${sid}" style="font-family:Raleway,sans-serif;font-size:.85rem;padding:7px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:38px;width:100%">
+          </div>
+          <div class="f-nombre" style="min-width:140px">
+            <label>Recibido por</label>
+            <input type="text" id="ap-recibido-${sid}" placeholder="Nombre..." onkeydown="if(event.key==='Enter'){event.preventDefault();agregarProducto('${sid}')}" style="font-family:Raleway,sans-serif;font-size:.85rem;padding:7px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:38px;width:100%">
+          </div>
           <div class="f-btns">
             <button class="btn-sm primary" onclick="agregarProducto('${sid}')">Agregar</button>
             <button class="btn-sm secondary" onclick="toggleAddProd('${sid}')">Cancelar</button>
           </div>
         </div>
-        <div class="store-footer">
-          <button class="btn-add-prod" onclick="toggleAddProd('${sid}')">+ Agregar producto</button>
+        <div id="store-footer-${sid}" style="${collapsed ? 'display:none' : ''}">
+          ${esPrincipal
+            ? `<div class="store-footer" style="color:var(--text-muted);font-size:.8rem;padding:10px 16px">Gestionado desde la pestana <strong>Stock Principal</strong></div>`
+            : `<div class="store-footer"><button class="btn-add-prod" onclick="toggleAddProd('${sid}')">+ Agregar producto</button></div>`
+          }
         </div>
       </div>`;
   }
 
-  function renderProdFila(sid, prod) {
+  function renderProdFila(sid, prod, esPrincipal) {
     const pid = prod.id;
+    const fechaEntrega = prod.fecha_entrega
+      ? new Date(prod.fecha_entrega).toLocaleDateString('es-PY', {day:'2-digit',month:'2-digit',year:'numeric'})
+      : '';
+    const recibidoPor = prod.recibido_por || '';
+    const infoTooltip = (fechaEntrega || recibidoPor)
+      ? `Entrega: ${fechaEntrega || '—'}${recibidoPor ? ' · Recibido por: ' + escapeHtml(recibidoPor) : ''}`
+      : 'Sin datos de entrega';
     return `
       <tr id="crow-${sid}-${pid}">
-        <td>
+        <td style="display:flex;align-items:center;gap:6px">
           <input class="inline-edit" type="text"
             value="${escapeHtml(prod.nombre)}"
             id="cp-nombre-${sid}-${pid}"
             onblur="guardarProd('${sid}','${pid}')"
             onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}"
-            aria-label="Nombre del producto">
+            aria-label="Nombre del producto"
+            style="flex:1">
+          <span title="${escapeHtml(infoTooltip)}" style="cursor:default;color:var(--text-muted);flex-shrink:0" aria-label="${escapeHtml(infoTooltip)}">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10"/><path stroke-linecap="round" d="M12 16v-4m0-4h.01"/>
+            </svg>
+          </span>
         </td>
         <td class="td-c">
           <div class="consig-stock-wrap">
@@ -2112,13 +2318,25 @@ async def panel_stock():
             aria-label="Notas">
         </td>
         <td class="td-c">
-          <button class="btn-icon danger" onclick="eliminarProducto('${sid}','${pid}')" title="Eliminar producto">
+          ${esPrincipal ? '' : `<button class="btn-icon danger" onclick="eliminarProducto('${sid}','${pid}')" title="Eliminar producto">
             <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
             </svg>
-          </button>
+          </button>`}
         </td>
       </tr>`;
+  }
+
+  /* ─── Colapsar/expandir tienda ─── */
+  function toggleStoreCollapse(sid) {
+    storeCollapsed[sid] = !storeCollapsed[sid];
+    const collapsed = storeCollapsed[sid];
+    const body    = document.getElementById('store-body-' + sid);
+    const footer  = document.getElementById('store-footer-' + sid);
+    const chevron = document.getElementById('chevron-' + sid);
+    if (body)    body.style.display    = collapsed ? 'none' : '';
+    if (footer)  footer.style.display  = collapsed ? 'none' : '';
+    if (chevron) chevron.style.transform = collapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
   }
 
   /* ─── Toggle helpers ─── */
@@ -2132,11 +2350,18 @@ async def panel_stock():
   function toggleAddProd(sid) {
     const f = document.getElementById('addprod-form-' + sid);
     const visible = f.classList.toggle('visible');
-    if (visible) { document.getElementById('ap-nombre-' + sid).focus(); }
-    else {
+    if (visible) {
+      const today = new Date().toISOString().slice(0,10);
+      const fechaEl = document.getElementById('ap-fecha-' + sid);
+      if (fechaEl) fechaEl.value = today;
+    } else {
       document.getElementById('ap-nombre-' + sid).value = '';
       document.getElementById('ap-stock-' + sid).value = '0';
       document.getElementById('ap-notas-' + sid).value = '';
+      const fechaEl = document.getElementById('ap-fecha-' + sid);
+      if (fechaEl) fechaEl.value = '';
+      const recEl = document.getElementById('ap-recibido-' + sid);
+      if (recEl) recEl.value = '';
     }
   }
 
@@ -2233,11 +2458,15 @@ async def panel_stock():
     if (!nombre) { mostrarToast('El nombre es obligatorio', 'err'); return; }
     const stock = parseInt(document.getElementById('ap-stock-' + sid).value, 10) || 0;
     const notas = document.getElementById('ap-notas-' + sid).value.trim();
+    const fechaEl = document.getElementById('ap-fecha-' + sid);
+    const recibidoEl = document.getElementById('ap-recibido-' + sid);
+    const fecha_entrega = fechaEl ? (fechaEl.value ? fechaEl.value + 'T00:00:00' : '') : '';
+    const recibido_por = recibidoEl ? recibidoEl.value.trim() : '';
     try {
       const res = await fetch('/api/consignacion/tiendas/' + sid + '/productos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, stock, notas })
+        body: JSON.stringify({ nombre, stock, notas, fecha_entrega, recibido_por })
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
@@ -2326,6 +2555,7 @@ async def panel_stock():
 
   /* ─── Boot ─── */
   cargarStock(false);
+  cargarConsig();
   refreshTimer = setInterval(() => cargarStock(false), 60000);
 </script>
 </body>
