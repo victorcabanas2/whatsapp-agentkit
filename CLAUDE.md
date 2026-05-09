@@ -43,8 +43,12 @@ config/
 knowledge/
   catálogo_completo.json      — Catálogo con precios y specs (fuente de verdad)
   catálogo_búsqueda_rápida.json — Índice para búsquedas rápidas
-  stock_actual.json           — Stock en vivo (actualizado por scheduler)
+  stock_actual.json           — Stock en vivo (⚠️ en Railway se lee de DATA_DIR, no de aquí)
+  consignacion.json           — Tiendas en consignación (⚠️ ídem)
+  movimientos.json            — Historial de movimientos (⚠️ ídem)
   imagenes_productos.json     — URLs imágenes Shopify por product_id
+
+docker-entrypoint.sh          — Init script: copia JSONs a DATA_DIR si no existen, luego uvicorn
 
 app/                — CRM dashboard (React Router + Shopify embedded)
   routes/dashboard.*  — Leads, conversaciones, campañas, pedidos
@@ -126,6 +130,29 @@ WhatsApp cliente
     → agent/memory.py guarda Lead + Mensaje + Auditoria
     → agent/scheduler.py programa seguimientos automáticos
 ```
+
+---
+
+## Persistencia de datos en Railway (2026-05-09)
+
+Los archivos mutables del panel de stock NO viven en `knowledge/` en producción — viven en el volumen Railway montado en `/app/data`.
+
+| Variable | Local | Railway |
+|----------|-------|---------|
+| `DATA_DIR` | no seteada → usa `knowledge/` | `/app/data` |
+
+**Archivos persistidos en el volumen:**
+- `stock_actual.json`, `consignacion.json`, `movimientos.json`
+
+**Flujo en cada deploy:**
+1. `docker-entrypoint.sh` corre como root
+2. Si `DATA_DIR` está seteada, crea el dir y copia los JSONs de `knowledge/` solo si no existen aún
+3. Arranca uvicorn
+
+**Reglas:**
+- El Dockerfile corre como root (no non-root user) para que pueda escribir al volumen Railway
+- `stock_panel.py` y `brain.py` leen `DATA_DIR` env var para ubicar los archivos mutables
+- Si se agrega un JSON mutable nuevo al panel, también hay que agregarlo al `docker-entrypoint.sh`
 
 ---
 
