@@ -2902,7 +2902,7 @@ async def panel_stock():
       const metLabel   = METODO_LABEL[v.metodo_pago] || (v.metodo_pago || '—');
       return `<tr style="border-bottom:1px solid var(--border)">
         <td style="padding:10px 14px;font-size:.82rem;white-space:nowrap">${formatFechaMov(v.fecha)}</td>
-        <td style="padding:10px 14px;font-size:.88rem;font-weight:500">${escapeHtml(v.producto)}</td>
+        <td style="padding:10px 14px;font-size:.88rem;font-weight:500;min-width:160px;white-space:nowrap">${escapeHtml(v.producto)}</td>
         <td style="padding:10px 14px;text-align:center;font-family:Montserrat,sans-serif;font-weight:600">${qty}</td>
         <td style="padding:10px 14px;text-align:right;font-family:Montserrat,sans-serif;font-size:.85rem">${formatGs(precio)}</td>
         <td style="padding:10px 14px;text-align:right;font-family:Montserrat,sans-serif;font-size:.82rem;color:var(--text-muted)">${costo_unit > 0 ? formatGs(costo_unit) : '—'}</td>
