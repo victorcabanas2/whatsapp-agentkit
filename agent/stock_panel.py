@@ -58,6 +58,9 @@ class MovimientoCreate(BaseModel):
     notas: str = ""
     fecha: str = ""  # ISO date string; si vacío usa now()
     recibido_por: str = ""
+    cliente_nombre: str = ""
+    cliente_telefono: str = ""
+    metodo_pago: str = ""  # efectivo | transferencia | ueno | tarjeta | otro
 
 
 # ── Consignacion helpers ──
@@ -389,6 +392,9 @@ async def crear_movimiento(body: MovimientoCreate):
         "notas": body.notas or "",
         "fecha": body.fecha if body.fecha else datetime.now().isoformat(),
         "recibido_por": body.recibido_por or "",
+        "cliente_nombre": body.cliente_nombre or "",
+        "cliente_telefono": body.cliente_telefono or "",
+        "metodo_pago": body.metodo_pago or "",
     }
     data["movimientos"].insert(0, nuevo)
     save_movimientos(data)
@@ -497,6 +503,111 @@ async def eliminar_movimiento(mov_id: str):
         raise HTTPException(status_code=404, detail="Movimiento no encontrado")
     save_movimientos(data)
     return {"status": "ok"}
+
+
+@router.post("/api/stock/importar-costos")
+async def importar_costos(body: dict):
+    """Importa costos masivos. body: {"productos": [{"nombre": "...", "costo": N}]}"""
+    data = load_stock()
+    nombres_map = {p["nombre"].strip().lower(): pid for pid, p in data["productos"].items()}
+    actualizados = 0
+    for item in body.get("productos", []):
+        nombre = item.get("nombre", "").strip().lower()
+        costo = float(item.get("costo", 0))
+        if nombre in nombres_map:
+            pid = nombres_map[nombre]
+            data["productos"][pid]["costo"] = costo
+            actualizados += 1
+    if actualizados:
+        save_stock(data)
+    return {"status": "ok", "actualizados": actualizados, "total": len(body.get("productos", []))}
+
+
+@router.put("/api/stock/productos/{prod_id}/costo")
+async def actualizar_costo_producto(prod_id: str, body: dict):
+    data = load_stock()
+    if prod_id not in data["productos"]:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    data["productos"][prod_id]["costo"] = float(body.get("costo", 0))
+    save_stock(data)
+    return {"status": "ok"}
+
+
+@router.get("/api/ventas/resumen")
+async def ventas_resumen():
+    movs = load_movimientos().get("movimientos", [])
+    stock_prods = load_stock().get("productos", {})
+    costos_map = {p["nombre"].strip().lower(): p.get("costo", 0) for p in stock_prods.values()}
+    ventas = [m for m in movs if m.get("tipo") == "venta"]
+    total_valor = sum(m.get("precio_venta", 0) * m.get("cantidad", 1) for m in ventas)
+    total_costo = sum(
+        costos_map.get(m.get("producto", "").strip().lower(), 0) * m.get("cantidad", 1)
+        for m in ventas
+    )
+    margen = total_valor - total_costo
+    margen_pct = round(margen / total_valor * 100, 1) if total_valor > 0 else 0
+    # Attach costo + margen per movimiento
+    ventas_con_margen = []
+    for m in ventas:
+        costo_unit = costos_map.get(m.get("producto", "").strip().lower(), 0)
+        qty = m.get("cantidad", 1)
+        precio = m.get("precio_venta", 0)
+        margen_m = (precio - costo_unit) * qty
+        ventas_con_margen.append({**m, "costo_unitario": costo_unit, "margen": margen_m})
+    return {
+        "ventas": ventas_con_margen,
+        "total_valor": total_valor,
+        "total_costo": total_costo,
+        "margen_bruto": margen,
+        "margen_pct": margen_pct,
+    }
+
+
+@router.get("/api/consignacion/liquidacion")
+async def consig_liquidacion():
+    consig = load_consig()
+    movs = load_movimientos().get("movimientos", [])
+    result = []
+    for tienda in consig.get("tiendas", []):
+        if tienda.get("tipo") == "principal":
+            continue
+        nombre_t = tienda["nombre"].strip().lower()
+        ventas_t = [m for m in movs if m.get("tipo") == "venta" and m.get("ubicacion", "").strip().lower() == nombre_t]
+        productos_comision = {p["nombre"].strip().lower(): p.get("porcentaje_comision", 0) for p in tienda.get("productos", [])}
+        detalle = []
+        total_cobrar = 0.0
+        for m in ventas_t:
+            prod_key = m.get("producto", "").strip().lower()
+            comision = productos_comision.get(prod_key, 0)
+            precio = m.get("precio_venta", 0)
+            qty = m.get("cantidad", 1)
+            mi_ingreso = precio * (1 - comision / 100) * qty
+            total_cobrar += mi_ingreso
+            detalle.append({**m, "comision_pct": comision, "mi_ingreso": round(mi_ingreso)})
+        result.append({
+            "id": tienda["id"],
+            "nombre": tienda["nombre"],
+            "ventas": detalle,
+            "total_a_cobrar": round(total_cobrar),
+        })
+    return {"tiendas": result}
+
+
+@router.put("/api/consignacion/tiendas/{store_id}/productos/{prod_id}/comision")
+async def actualizar_comision_producto(store_id: str, prod_id: str, body: dict):
+    data = load_consig()
+    tienda = next((t for t in data["tiendas"] if t["id"] == store_id), None)
+    if not tienda:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada")
+    prod = next((p for p in tienda.get("productos", []) if p["id"] == prod_id), None)
+    if not prod:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    pct = float(body.get("porcentaje_comision", 0))
+    if not (0 <= pct <= 100):
+        raise HTTPException(status_code=400, detail="Porcentaje debe estar entre 0 y 100")
+    prod["porcentaje_comision"] = pct
+    save_consig(data)
+    return {"status": "ok", "porcentaje_comision": pct}
 
 
 @router.get("/panel/stock", response_class=HTMLResponse)
@@ -1317,6 +1428,7 @@ async def panel_stock():
     <button class="section-tab active" id="stab-stock" onclick="switchSection('stock')">Stock Principal</button>
     <button class="section-tab" id="stab-consig" onclick="switchSection('consig')">Consignacion</button>
     <button class="section-tab" id="stab-movimientos" onclick="switchSection('movimientos')">Movimientos</button>
+    <button class="section-tab" id="stab-ventas" onclick="switchSection('ventas')">Control de Ventas</button>
   </div>
 
   <!-- ══ SECTION: Stock Principal ══ -->
@@ -1456,6 +1568,28 @@ async def panel_stock():
           <input type="text" id="mf-notas" placeholder="Opcional" onkeydown="if(event.key==='Enter'){event.preventDefault();registrarMovimiento()}" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
         </div>
       </div>
+      <!-- Campos extra solo para ventas -->
+      <div id="mf-venta-extra" style="display:none;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;padding-top:4px">
+        <div style="min-width:160px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Cliente</label>
+          <input type="text" id="mf-cliente-nombre" placeholder="Nombre del cliente" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+        </div>
+        <div style="min-width:150px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Telefono / WhatsApp</label>
+          <input type="text" id="mf-cliente-telefono" placeholder="+595..." style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+        </div>
+        <div style="min-width:160px">
+          <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Metodo de pago</label>
+          <select id="mf-metodo-pago" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:42px;width:100%">
+            <option value="">— Seleccionar —</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="transferencia">Transferencia</option>
+            <option value="ueno">UENO</option>
+            <option value="tarjeta">Tarjeta</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+      </div>
       <div style="display:flex;gap:8px">
         <button class="btn-sm primary" onclick="registrarMovimiento()">Registrar</button>
         <button class="btn-sm secondary" onclick="toggleMovForm()">Cancelar</button>
@@ -1480,6 +1614,91 @@ async def panel_stock():
         </thead>
         <tbody id="mov-tbody">
           <tr><td colspan="9" class="state-msg">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ══ SECTION: Ventas ══ -->
+  <div id="section-ventas" style="display:none">
+
+    <!-- KPIs ventas -->
+    <div class="kpi-grid" id="ven-kpi-grid" style="grid-template-columns:repeat(5,1fr)">
+      <div class="kpi-card total">
+        <div class="kpi-label">Ventas totales</div>
+        <div class="kpi-value" id="vkpi-count">—</div>
+      </div>
+      <div class="kpi-card disp">
+        <div class="kpi-label">Valor vendido</div>
+        <div class="kpi-value" id="vkpi-valor" style="font-size:1.1rem">—</div>
+      </div>
+      <div class="kpi-card bajo">
+        <div class="kpi-label">Costo total</div>
+        <div class="kpi-value" id="vkpi-costo" style="font-size:1.1rem">—</div>
+      </div>
+      <div class="kpi-card" style="border-left:3px solid var(--green)">
+        <div class="kpi-label">Margen bruto</div>
+        <div class="kpi-value" id="vkpi-margen" style="font-size:1.1rem;color:var(--green)">—</div>
+      </div>
+      <div class="kpi-card" style="border-left:3px solid var(--purple)">
+        <div class="kpi-label">Margen %</div>
+        <div class="kpi-value" id="vkpi-margen-pct" style="color:var(--purple)">—</div>
+      </div>
+    </div>
+
+    <!-- Toolbar ventas -->
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="vfil-periodo" onchange="filtrarVentas()" style="font-family:Raleway,sans-serif;font-size:.85rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:38px">
+          <option value="">Todo el tiempo</option>
+          <option value="hoy">Hoy</option>
+          <option value="semana">Esta semana</option>
+          <option value="mes" selected>Este mes</option>
+        </select>
+        <input type="text" id="vfil-buscar" placeholder="Buscar producto o cliente..." oninput="filtrarVentas()" style="font-family:Raleway,sans-serif;font-size:.85rem;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);min-height:38px;min-width:200px">
+      </div>
+      <button class="btn-new-store" onclick="abrirImportarCostos()">
+        Importar costos (JSON)
+      </button>
+    </div>
+
+    <!-- Modal importar costos -->
+    <div id="modal-costos" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center">
+      <div style="background:var(--white);border-radius:var(--radius-lg);padding:24px;max-width:520px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+        <h3 style="font-family:Montserrat,sans-serif;font-size:1rem;font-weight:700;margin:0 0 8px">Importar costos</h3>
+        <p style="font-size:.82rem;color:var(--text-muted);margin:0 0 12px">Pega un JSON con la lista de productos y sus costos. El nombre debe coincidir exactamente.</p>
+        <pre style="font-size:.75rem;background:#F5F3FF;padding:8px 12px;border-radius:6px;margin:0 0 12px;color:var(--text-muted)">[
+  {"nombre": "WHOOP 4.0", "costo": 850000},
+  {"nombre": "Theragun Prime", "costo": 1200000}
+]</pre>
+        <textarea id="costos-json" rows="8" style="width:100%;font-family:monospace;font-size:.82rem;padding:10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);resize:vertical;box-sizing:border-box" placeholder='[{"nombre":"...", "costo": 0}]'></textarea>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn-sm primary" onclick="ejecutarImportarCostos()">Importar</button>
+          <button class="btn-sm secondary" onclick="cerrarImportarCostos()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabla de ventas con detalle -->
+    <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:auto;box-shadow:var(--shadow-sm)">
+      <table style="width:100%;border-collapse:collapse;min-width:900px">
+        <thead>
+          <tr>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Fecha</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Producto</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:center;border-bottom:1px solid var(--border)">Cant.</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:right;border-bottom:1px solid var(--border)">Precio</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:right;border-bottom:1px solid var(--border)">Costo unit.</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:right;border-bottom:1px solid var(--border)">Margen</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Cliente</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Telefono</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Pago</th>
+            <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Ubicacion</th>
+          </tr>
+        </thead>
+        <tbody id="ven-tbody">
+          <tr><td colspan="10" class="state-msg">Cargando...</td></tr>
         </tbody>
       </table>
     </div>
@@ -1543,6 +1762,12 @@ async def panel_stock():
         </svg>
         Cargando consignacion...
       </div>
+    </div>
+
+    <!-- Liquidacion resumen -->
+    <div id="liquidacion-wrap" style="display:none;margin-top:20px">
+      <div style="font-family:Montserrat,sans-serif;font-size:.85rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Liquidacion por tienda</div>
+      <div id="liquidacion-cards" style="display:flex;flex-direction:column;gap:10px"></div>
     </div>
 
   </div>
@@ -1875,11 +2100,15 @@ async def panel_stock():
     document.getElementById('section-stock').style.display = sec === 'stock' ? '' : 'none';
     document.getElementById('section-consig').style.display = sec === 'consig' ? '' : 'none';
     document.getElementById('section-movimientos').style.display = sec === 'movimientos' ? '' : 'none';
+    document.getElementById('section-ventas').style.display = sec === 'ventas' ? '' : 'none';
     document.getElementById('stab-stock').classList.toggle('active', sec === 'stock');
     document.getElementById('stab-consig').classList.toggle('active', sec === 'consig');
     document.getElementById('stab-movimientos').classList.toggle('active', sec === 'movimientos');
+    document.getElementById('stab-ventas').classList.toggle('active', sec === 'ventas');
     if (sec === 'consig' && !consigData) cargarConsig();
+    if (sec === 'consig') cargarLiquidacion();
     if (sec === 'movimientos' && !movimientosData) cargarMovimientos();
+    if (sec === 'ventas') cargarVentas();
   }
 
   /* ─── Movimientos state ─── */
@@ -2008,6 +2237,9 @@ async def panel_stock():
     const fechaVal = document.getElementById('mf-fecha').value;
     const notas    = document.getElementById('mf-notas').value.trim();
     const recibido_por = document.getElementById('mf-recibido').value.trim();
+    const cliente_nombre = tipo === 'venta' ? document.getElementById('mf-cliente-nombre').value.trim() : '';
+    const cliente_telefono = tipo === 'venta' ? document.getElementById('mf-cliente-telefono').value.trim() : '';
+    const metodo_pago = tipo === 'venta' ? document.getElementById('mf-metodo-pago').value : '';
     if (!prodSel) { mostrarToast('Selecciona un producto', 'err'); return; }
     if (!cantRaw || cantRaw < 1) { mostrarToast('Cantidad invalida', 'err'); return; }
     let cantidad = cantRaw;
@@ -2020,7 +2252,7 @@ async def panel_stock():
       const res = await fetch('/api/movimientos', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ tipo, producto: prodSel, cantidad, ubicacion, precio_venta: precio, notas, fecha, recibido_por })
+        body: JSON.stringify({ tipo, producto: prodSel, cantidad, ubicacion, precio_venta: precio, notas, fecha, recibido_por, cliente_nombre, cliente_telefono, metodo_pago })
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
@@ -2096,6 +2328,7 @@ async def panel_stock():
     const tipo = document.getElementById('mf-tipo').value;
     document.getElementById('mf-precio-wrap').style.display = tipo === 'venta' ? '' : 'none';
     document.getElementById('mf-signo-wrap').style.display = tipo === 'ajuste' ? '' : 'none';
+    document.getElementById('mf-venta-extra').style.display = tipo === 'venta' ? 'flex' : 'none';
     // Retiro y Reposicion: solo tiendas de consignacion (no Solumedic)
     // Venta y Ajuste: todas las ubicaciones
     const soloConsig = tipo === 'retiro' || tipo === 'reposicion';
@@ -2171,11 +2404,12 @@ async def panel_stock():
            </svg>
          </button>` : '';
     const prods = tienda.productos || [];
+    const colSpan = esPrincipal ? 4 : 5;
     const filas = prods.length > 0
       ? prods.map(p => renderProdFila(sid, p, esPrincipal)).join('')
       : esPrincipal
-        ? `<tr><td colspan="4" class="consig-empty">Sin productos en Stock Principal.</td></tr>`
-        : `<tr><td colspan="4" class="consig-empty">Sin productos. Agrega uno abajo.</td></tr>`;
+        ? `<tr><td colspan="${colSpan}" class="consig-empty">Sin productos en Stock Principal.</td></tr>`
+        : `<tr><td colspan="${colSpan}" class="consig-empty">Sin productos. Agrega uno abajo.</td></tr>`;
 
     const collapsed = !!storeCollapsed[sid];
     return `
@@ -2219,6 +2453,7 @@ async def panel_stock():
                 <th>Producto</th>
                 <th class="th-c">Stock</th>
                 <th>Notas</th>
+                ${!esPrincipal ? '<th class="th-c" style="width:110px">% Comision</th>' : ''}
                 <th class="th-c">Acciones</th>
               </tr>
             </thead>
@@ -2317,6 +2552,17 @@ async def panel_stock():
             onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}"
             aria-label="Notas">
         </td>
+        ${!esPrincipal ? `<td class="td-c">
+          <div style="display:flex;align-items:center;justify-content:center;gap:3px">
+            <input type="number" min="0" max="100" step="1"
+              id="cp-comision-${sid}-${pid}"
+              value="${prod.porcentaje_comision || 0}"
+              style="width:52px;font-family:Raleway,sans-serif;font-size:.82rem;padding:4px 6px;border:1.5px solid var(--border);border-radius:var(--radius-sm);text-align:center"
+              onblur="guardarComision('${sid}','${pid}')"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}">
+            <span style="font-size:.75rem;color:var(--text-muted)">%</span>
+          </div>
+        </td>` : ''}
         <td class="td-c">
           ${esPrincipal ? '' : `<button class="btn-icon danger" onclick="eliminarProducto('${sid}','${pid}')" title="Eliminar producto">
             <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -2325,6 +2571,31 @@ async def panel_stock():
           </button>`}
         </td>
       </tr>`;
+  }
+
+  /* ─── Guardar comision de producto en tienda ─── */
+  async function guardarComision(sid, pid) {
+    const input = document.getElementById('cp-comision-' + sid + '-' + pid);
+    if (!input) return;
+    const pct = parseFloat(input.value) || 0;
+    if (pct < 0 || pct > 100) { mostrarToast('Porcentaje entre 0 y 100', 'err'); return; }
+    try {
+      const res = await fetch('/api/consignacion/tiendas/' + sid + '/productos/' + pid + '/comision', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ porcentaje_comision: pct })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      // actualizar en estado local
+      const tienda = consigData && consigData.tiendas.find(t => t.id === sid);
+      if (tienda) {
+        const prod = tienda.productos.find(p => p.id === pid);
+        if (prod) prod.porcentaje_comision = pct;
+      }
+      mostrarToast('Comision guardada', 'ok');
+    } catch(err) {
+      mostrarToast('Error al guardar comision', 'err');
+    }
   }
 
   /* ─── Colapsar/expandir tienda ─── */
@@ -2551,6 +2822,162 @@ async def panel_stock():
     } catch (err) {
       mostrarToast('Error al eliminar', 'err');
     }
+  }
+
+  /* ─── Ventas state ─── */
+  let ventasData = null;
+
+  /* ─── Ventas: cargar desde API ─── */
+  async function cargarVentas() {
+    try {
+      const res = await fetch('/api/ventas/resumen');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      ventasData = await res.json();
+      actualizarVentasKPIs();
+      filtrarVentas();
+    } catch (err) {
+      document.getElementById('ven-tbody').innerHTML =
+        '<tr><td colspan="10" class="state-msg">Error al cargar ventas</td></tr>';
+      mostrarToast('Error al cargar ventas', 'err');
+    }
+  }
+
+  /* ─── Ventas: KPIs ─── */
+  function actualizarVentasKPIs() {
+    if (!ventasData) return;
+    document.getElementById('vkpi-count').textContent = ventasData.ventas.length;
+    document.getElementById('vkpi-valor').textContent = formatGs(ventasData.total_valor);
+    document.getElementById('vkpi-costo').textContent = formatGs(ventasData.total_costo);
+    document.getElementById('vkpi-margen').textContent = formatGs(ventasData.margen_bruto);
+    document.getElementById('vkpi-margen-pct').textContent = ventasData.margen_pct + '%';
+  }
+
+  /* ─── Ventas: filtrar y renderizar ─── */
+  function filtrarVentas() {
+    if (!ventasData) return;
+    const periodo = document.getElementById('vfil-periodo').value;
+    const buscar  = document.getElementById('vfil-buscar').value.toLowerCase().trim();
+    const now     = new Date();
+    const hoy     = now.toISOString().slice(0, 10);
+    const lunes   = (() => { const d = new Date(now); d.setDate(d.getDate() - ((d.getDay()+6)%7)); return d.toISOString().slice(0,10); })();
+    const primerMes = hoy.slice(0, 7) + '-01';
+
+    let ventas = ventasData.ventas.filter(v => {
+      const fStr = (v.fecha || '').slice(0, 10);
+      if (periodo === 'hoy'    && fStr !== hoy)     return false;
+      if (periodo === 'semana' && fStr < lunes)      return false;
+      if (periodo === 'mes'    && fStr < primerMes)  return false;
+      if (buscar && !(v.producto||'').toLowerCase().includes(buscar) && !(v.cliente_nombre||'').toLowerCase().includes(buscar)) return false;
+      return true;
+    });
+
+    // Recalcular KPIs del filtro
+    const totalVal  = ventas.reduce((s, v) => s + (v.precio_venta||0) * (v.cantidad||1), 0);
+    const totalCost = ventas.reduce((s, v) => s + (v.costo_unitario||0) * (v.cantidad||1), 0);
+    const margen    = totalVal - totalCost;
+    const margenPct = totalVal > 0 ? Math.round(margen / totalVal * 1000) / 10 : 0;
+    document.getElementById('vkpi-count').textContent   = ventas.length;
+    document.getElementById('vkpi-valor').textContent   = formatGs(totalVal);
+    document.getElementById('vkpi-costo').textContent   = formatGs(totalCost);
+    document.getElementById('vkpi-margen').textContent  = formatGs(margen);
+    document.getElementById('vkpi-margen-pct').textContent = margenPct + '%';
+
+    renderVentas(ventas);
+  }
+
+  /* ─── Ventas: renderizar tabla ─── */
+  function renderVentas(ventas) {
+    const tbody = document.getElementById('ven-tbody');
+    if (!ventas || ventas.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" class="state-msg">Sin ventas en el periodo seleccionado.</td></tr>';
+      return;
+    }
+    const METODO_LABEL = { efectivo:'Efectivo', transferencia:'Transfer.', ueno:'UENO', tarjeta:'Tarjeta', otro:'Otro' };
+    tbody.innerHTML = ventas.map(v => {
+      const costo_unit = v.costo_unitario || 0;
+      const qty        = v.cantidad || 1;
+      const precio     = v.precio_venta || 0;
+      const margen_v   = v.margen !== undefined ? v.margen : (precio - costo_unit) * qty;
+      const margenColor = margen_v >= 0 ? 'var(--green)' : 'var(--red)';
+      const metLabel   = METODO_LABEL[v.metodo_pago] || (v.metodo_pago || '—');
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:10px 14px;font-size:.82rem;white-space:nowrap">${formatFechaMov(v.fecha)}</td>
+        <td style="padding:10px 14px;font-size:.88rem;font-weight:500">${escapeHtml(v.producto)}</td>
+        <td style="padding:10px 14px;text-align:center;font-family:Montserrat,sans-serif;font-weight:600">${qty}</td>
+        <td style="padding:10px 14px;text-align:right;font-family:Montserrat,sans-serif;font-size:.85rem">${formatGs(precio)}</td>
+        <td style="padding:10px 14px;text-align:right;font-family:Montserrat,sans-serif;font-size:.82rem;color:var(--text-muted)">${costo_unit > 0 ? formatGs(costo_unit) : '—'}</td>
+        <td style="padding:10px 14px;text-align:right;font-family:Montserrat,sans-serif;font-size:.85rem;font-weight:600;color:${margenColor}">${costo_unit > 0 ? formatGs(margen_v) : '—'}</td>
+        <td style="padding:10px 14px;font-size:.85rem">${escapeHtml(v.cliente_nombre||'—')}</td>
+        <td style="padding:10px 14px;font-size:.82rem;color:var(--text-muted)">${escapeHtml(v.cliente_telefono||'—')}</td>
+        <td style="padding:10px 14px;font-size:.82rem"><span style="background:#F5F3FF;color:var(--purple);padding:2px 8px;border-radius:10px;font-size:.78rem;font-weight:600">${metLabel}</span></td>
+        <td style="padding:10px 14px;font-size:.82rem;color:var(--text-muted)">${escapeHtml(v.ubicacion||'')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  /* ─── Importar costos ─── */
+  function abrirImportarCostos() {
+    const m = document.getElementById('modal-costos');
+    m.style.display = 'flex';
+    document.getElementById('costos-json').value = '';
+  }
+  function cerrarImportarCostos() {
+    document.getElementById('modal-costos').style.display = 'none';
+  }
+  async function ejecutarImportarCostos() {
+    const raw = document.getElementById('costos-json').value.trim();
+    let productos;
+    try { productos = JSON.parse(raw); } catch(e) { mostrarToast('JSON invalido', 'err'); return; }
+    if (!Array.isArray(productos)) { mostrarToast('Debe ser un array JSON', 'err'); return; }
+    try {
+      const res = await fetch('/api/stock/importar-costos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productos })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      cerrarImportarCostos();
+      await cargarStock();
+      cargarVentas();
+      mostrarToast('Costos importados: ' + data.actualizados + ' de ' + data.total + ' productos', 'ok');
+    } catch(err) {
+      mostrarToast('Error al importar costos', 'err');
+    }
+  }
+
+  /* ─── Liquidacion consignacion ─── */
+  async function cargarLiquidacion() {
+    try {
+      const res = await fetch('/api/consignacion/liquidacion');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      renderLiquidacion(data.tiendas);
+    } catch(err) {
+      console.error('Error liquidacion', err);
+    }
+  }
+
+  function renderLiquidacion(tiendas) {
+    const wrap = document.getElementById('liquidacion-wrap');
+    const cards = document.getElementById('liquidacion-cards');
+    const activas = tiendas.filter(t => t.ventas.length > 0);
+    if (activas.length === 0) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    cards.innerHTML = activas.map(t => `
+      <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <div style="font-weight:700;font-size:.9rem">${escapeHtml(t.nombre)}</div>
+          <div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">${t.ventas.length} venta${t.ventas.length !== 1 ? 's' : ''} registrada${t.ventas.length !== 1 ? 's' : ''}</div>
+          <div style="font-size:.78rem;color:var(--text-muted);margin-top:6px">
+            ${t.ventas.map(v => `${escapeHtml(v.producto)} x${v.cantidad} — <strong>${formatGs(v.mi_ingreso)}</strong> (${v.comision_pct}% com.)`).join('<br>')}
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Total a cobrar</div>
+          <div style="font-family:Montserrat,sans-serif;font-size:1.3rem;font-weight:800;color:var(--green)">${formatGs(t.total_a_cobrar)}</div>
+        </div>
+      </div>`).join('');
   }
 
   /* ─── Boot ─── */
