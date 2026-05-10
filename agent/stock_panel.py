@@ -1597,8 +1597,8 @@ async def panel_stock():
     </div>
 
     <!-- Tabla historial -->
-    <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm)">
-      <table style="width:100%;border-collapse:collapse" id="mov-table">
+    <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);overflow-x:auto;box-shadow:var(--shadow-sm)">
+      <table style="width:max-content;min-width:100%;border-collapse:collapse" id="mov-table">
         <thead>
           <tr>
             <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Fecha</th>
@@ -1681,8 +1681,8 @@ async def panel_stock():
     </div>
 
     <!-- Tabla de ventas con detalle -->
-    <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:auto;box-shadow:var(--shadow-sm)">
-      <table style="width:100%;border-collapse:collapse;min-width:900px">
+    <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);overflow-x:auto;box-shadow:var(--shadow-sm)">
+      <table style="width:max-content;min-width:100%;border-collapse:collapse">
         <thead>
           <tr>
             <th style="background:#F5F3FF;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)">Fecha</th>
