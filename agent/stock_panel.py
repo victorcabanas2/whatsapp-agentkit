@@ -117,6 +117,24 @@ async def get_stock():
     return load_stock()
 
 
+@router.post("/api/stock/importar-costos")
+async def importar_costos(body: dict):
+    """Importa costos masivos. body: {"productos": [{"nombre": "...", "costo": N}]}"""
+    data = load_stock()
+    nombres_map = {p["nombre"].strip().lower(): pid for pid, p in data["productos"].items()}
+    actualizados = 0
+    for item in body.get("productos", []):
+        nombre = item.get("nombre", "").strip().lower()
+        costo = float(item.get("costo", 0))
+        if nombre in nombres_map:
+            pid = nombres_map[nombre]
+            data["productos"][pid]["costo"] = costo
+            actualizados += 1
+    if actualizados:
+        save_stock(data)
+    return {"status": "ok", "actualizados": actualizados, "total": len(body.get("productos", []))}
+
+
 @router.post("/api/stock/{product_id}")
 async def update_stock(product_id: str, stock: int):
     """Actualiza stock de UN producto"""
@@ -503,24 +521,6 @@ async def eliminar_movimiento(mov_id: str):
         raise HTTPException(status_code=404, detail="Movimiento no encontrado")
     save_movimientos(data)
     return {"status": "ok"}
-
-
-@router.post("/api/stock/importar-costos")
-async def importar_costos(body: dict):
-    """Importa costos masivos. body: {"productos": [{"nombre": "...", "costo": N}]}"""
-    data = load_stock()
-    nombres_map = {p["nombre"].strip().lower(): pid for pid, p in data["productos"].items()}
-    actualizados = 0
-    for item in body.get("productos", []):
-        nombre = item.get("nombre", "").strip().lower()
-        costo = float(item.get("costo", 0))
-        if nombre in nombres_map:
-            pid = nombres_map[nombre]
-            data["productos"][pid]["costo"] = costo
-            actualizados += 1
-    if actualizados:
-        save_stock(data)
-    return {"status": "ok", "actualizados": actualizados, "total": len(body.get("productos", []))}
 
 
 @router.put("/api/stock/productos/{prod_id}/costo")
