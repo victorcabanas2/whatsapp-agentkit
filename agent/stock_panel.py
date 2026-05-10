@@ -2183,11 +2183,13 @@ async def panel_stock():
       tbody.innerHTML = '<tr><td colspan="9" class="state-msg">Sin movimientos registrados aun.</td></tr>';
       return;
     }
-    tbody.innerHTML = movs.map(m => `
+    tbody.innerHTML = movs.map(m => {
+      const fCorta = m.fecha ? new Date(m.fecha).toLocaleDateString('es-PY',{day:'2-digit',month:'2-digit',year:'2-digit'}) + ' ' + new Date(m.fecha).toLocaleTimeString('es-PY',{hour:'2-digit',minute:'2-digit'}) : '—';
+      return `
       <tr style="border-bottom:1px solid var(--border);background:${rowBgMov(m.tipo)}">
-        <td style="padding:10px 14px;font-size:.82rem;white-space:nowrap">${formatFechaMov(m.fecha)}</td>
+        <td style="padding:10px 14px;font-size:.82rem;white-space:nowrap;min-width:95px">${fCorta}</td>
         <td style="padding:10px 14px">${badgeMov(m.tipo)}</td>
-        <td style="padding:10px 14px;font-size:.88rem;font-weight:500">${escapeHtml(m.producto)}</td>
+        <td style="padding:10px 14px;font-size:.88rem;font-weight:500;white-space:nowrap">${escapeHtml(m.producto)}</td>
         <td style="padding:10px 14px;text-align:center;font-family:Montserrat,sans-serif;font-weight:600">${m.cantidad > 0 ? '+'+m.cantidad : m.cantidad}</td>
         <td style="padding:10px 14px;font-size:.85rem;color:var(--text-muted)">${escapeHtml(m.ubicacion||'')}</td>
         <td style="padding:10px 14px;font-size:.82rem;color:var(--text-muted)">${escapeHtml(m.recibido_por||'—')}</td>
