@@ -61,6 +61,8 @@ class MovimientoCreate(BaseModel):
     cliente_nombre: str = ""
     cliente_telefono: str = ""
     metodo_pago: str = ""  # efectivo | transferencia | ueno | tarjeta | otro
+    precio_venta_final: float = 0.0   # override para UENO Black u otras promo
+    absorcion_banco: float = 0.0       # % comisión banco (override manual)
 
 
 # ── Consignacion helpers ──
@@ -413,6 +415,8 @@ async def crear_movimiento(body: MovimientoCreate):
         "cliente_nombre": body.cliente_nombre or "",
         "cliente_telefono": body.cliente_telefono or "",
         "metodo_pago": body.metodo_pago or "",
+        "precio_venta_final": body.precio_venta_final,
+        "absorcion_banco": body.absorcion_banco,
     }
     data["movimientos"].insert(0, nuevo)
     save_movimientos(data)
@@ -537,28 +541,62 @@ async def actualizar_costo_producto(prod_id: str, body: dict):
 async def ventas_resumen():
     movs = load_movimientos().get("movimientos", [])
     stock_prods = load_stock().get("productos", {})
+    consig = load_consig()
     costos_map = {p["nombre"].strip().lower(): p.get("costo", 0) for p in stock_prods.values()}
+    # Build consig map: tienda_nombre_lower -> {prod_nombre_lower: comision_pct}
+    consig_map = {}
+    for t in consig.get("tiendas", []):
+        if t.get("tipo") == "principal":
+            continue
+        tname = t["nombre"].strip().lower()
+        consig_map[tname] = {p["nombre"].strip().lower(): p.get("porcentaje_comision", 0) for p in t.get("productos", [])}
+
+    _BANCO_DEFAULT = {"tarjeta": 5.5, "ueno": 0.0, "efectivo": 0.0, "transferencia": 0.0, "otro": 0.0}
+
+    def calc_margen(m):
+        qty = m.get("cantidad", 1)
+        precio_base = m.get("precio_venta", 0)
+        precio_final = m.get("precio_venta_final") or 0.0
+        precio = precio_final if precio_final > 0 else precio_base
+        costo = costos_map.get(m.get("producto", "").strip().lower(), 0)
+        ingreso_bruto = precio * qty
+        ubi = (m.get("ubicacion") or "").strip().lower()
+        if ubi in consig_map:
+            # Consignación: tienda se queda su % comisión, no hay IVA ni banco para Rebody
+            comision = consig_map[ubi].get(m.get("producto", "").strip().lower(), 0)
+            ingreso_rebody = ingreso_bruto * (1 - comision / 100)
+            return round(ingreso_rebody - costo * qty)
+        else:
+            # Stock principal: banco + IVA
+            absorcion = m.get("absorcion_banco") or 0.0
+            if absorcion <= 0:
+                absorcion = _BANCO_DEFAULT.get(m.get("metodo_pago", ""), 0.0)
+            banco = ingreso_bruto * (absorcion / 100)
+            iva = ingreso_bruto / 11  # IVA 10% inclusivo PY
+            ingreso_neto = ingreso_bruto - banco - iva
+            return round(ingreso_neto - costo * qty)
+
     ventas = [m for m in movs if m.get("tipo") == "venta"]
-    total_valor = sum(m.get("precio_venta", 0) * m.get("cantidad", 1) for m in ventas)
-    total_costo = sum(
-        costos_map.get(m.get("producto", "").strip().lower(), 0) * m.get("cantidad", 1)
-        for m in ventas
-    )
-    margen = total_valor - total_costo
-    margen_pct = round(margen / total_valor * 100, 1) if total_valor > 0 else 0
-    # Attach costo + margen per movimiento
     ventas_con_margen = []
+    total_valor = 0.0
+    total_costo = 0.0
+    total_margen = 0.0
     for m in ventas:
         costo_unit = costos_map.get(m.get("producto", "").strip().lower(), 0)
         qty = m.get("cantidad", 1)
-        precio = m.get("precio_venta", 0)
-        margen_m = (precio - costo_unit) * qty
+        precio_final = m.get("precio_venta_final") or 0.0
+        precio = precio_final if precio_final > 0 else m.get("precio_venta", 0)
+        margen_m = calc_margen(m)
+        total_valor += precio * qty
+        total_costo += costo_unit * qty
+        total_margen += margen_m
         ventas_con_margen.append({**m, "costo_unitario": costo_unit, "margen": margen_m})
+    margen_pct = round(total_margen / total_valor * 100, 1) if total_valor > 0 else 0
     return {
         "ventas": ventas_con_margen,
         "total_valor": total_valor,
         "total_costo": total_costo,
-        "margen_bruto": margen,
+        "margen_bruto": total_margen,
         "margen_pct": margen_pct,
     }
 
@@ -1589,6 +1627,22 @@ async def panel_stock():
             <option value="otro">Otro</option>
           </select>
         </div>
+        <!-- Avanzado: precio final y absorción banco -->
+        <div style="grid-column:1/-1;margin-top:2px">
+          <details>
+            <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted);user-select:none;padding:4px 0">Opciones avanzadas (UENO Black / banco)</summary>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Precio venta final (override)</label>
+                <input type="number" id="mf-precio-final" placeholder="Ej: 1500000" min="0" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">% Absorción banco (override)</label>
+                <input type="number" id="mf-absorcion-banco" placeholder="Ej: 5.5" min="0" max="100" step="0.1" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+              </div>
+            </div>
+          </details>
+        </div>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn-sm primary" onclick="registrarMovimiento()">Registrar</button>
@@ -2243,6 +2297,8 @@ async def panel_stock():
     const cliente_nombre = tipo === 'venta' ? document.getElementById('mf-cliente-nombre').value.trim() : '';
     const cliente_telefono = tipo === 'venta' ? document.getElementById('mf-cliente-telefono').value.trim() : '';
     const metodo_pago = tipo === 'venta' ? document.getElementById('mf-metodo-pago').value : '';
+    const precio_venta_final = tipo === 'venta' ? (parseFloat(document.getElementById('mf-precio-final').value) || 0) : 0;
+    const absorcion_banco = tipo === 'venta' ? (parseFloat(document.getElementById('mf-absorcion-banco').value) || 0) : 0;
     if (!prodSel) { mostrarToast('Selecciona un producto', 'err'); return; }
     if (!cantRaw || cantRaw < 1) { mostrarToast('Cantidad invalida', 'err'); return; }
     let cantidad = cantRaw;
@@ -2255,7 +2311,7 @@ async def panel_stock():
       const res = await fetch('/api/movimientos', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ tipo, producto: prodSel, cantidad, ubicacion, precio_venta: precio, notas, fecha, recibido_por, cliente_nombre, cliente_telefono, metodo_pago })
+        body: JSON.stringify({ tipo, producto: prodSel, cantidad, ubicacion, precio_venta: precio, notas, fecha, recibido_por, cliente_nombre, cliente_telefono, metodo_pago, precio_venta_final, absorcion_banco })
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
@@ -2324,6 +2380,8 @@ async def panel_stock():
       document.getElementById('mf-precio').value = '0';
       document.getElementById('mf-notas').value = '';
       document.getElementById('mf-recibido').value = '';
+      document.getElementById('mf-precio-final').value = '';
+      document.getElementById('mf-absorcion-banco').value = '';
     }
   }
 
