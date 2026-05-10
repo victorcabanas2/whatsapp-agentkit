@@ -2209,7 +2209,7 @@ async def panel_stock():
     const ventasMes = movs.filter(m => m.tipo === 'venta' && (m.fecha || '').startsWith(mes));
     const reposMes  = movs.filter(m => m.tipo === 'reposicion' && (m.fecha || '').startsWith(mes));
     const unidades  = ventasMes.reduce((s,m) => s + (m.cantidad||0), 0);
-    const valor     = ventasMes.reduce((s,m) => s + ((m.precio_venta||0) * (m.cantidad||0)), 0);
+    const valor     = ventasMes.reduce((s,m) => s + ((m.precio_venta_final||m.precio_venta||0) * (m.cantidad||0)), 0);
     document.getElementById('mkpi-ventas').textContent  = ventasMes.length;
     document.getElementById('mkpi-unidades').textContent = unidades;
     document.getElementById('mkpi-repos').textContent   = reposMes.length;
@@ -2265,7 +2265,7 @@ async def panel_stock():
         <td style="padding:10px 14px;text-align:center;font-family:Montserrat,sans-serif;font-weight:600">${m.cantidad > 0 ? '+'+m.cantidad : m.cantidad}</td>
         <td style="padding:10px 14px;font-size:.85rem;color:var(--text-muted)">${escapeHtml(m.ubicacion||'')}</td>
         <td style="padding:10px 14px;font-size:.82rem;color:var(--text-muted)">${escapeHtml(m.recibido_por||'—')}</td>
-        <td style="padding:10px 14px;text-align:right;font-size:.82rem;font-family:Montserrat,sans-serif">${m.precio_venta ? formatGs(m.precio_venta) : '—'}</td>
+        <td style="padding:10px 14px;text-align:right;font-size:.82rem;font-family:Montserrat,sans-serif">${(m.precio_venta_final||m.precio_venta) ? formatGs(m.precio_venta_final||m.precio_venta) : '—'}</td>
         <td style="padding:10px 14px;font-size:.82rem;color:var(--text-muted)">${escapeHtml(m.notas||'')}</td>
         <td style="padding:10px 14px;text-align:center;white-space:nowrap">
           <button class="btn-icon" onclick="abrirEditarMov('${m.id}')" title="Editar" style="color:var(--purple)">
@@ -3025,7 +3025,7 @@ async def panel_stock():
     });
 
     // Recalcular KPIs del filtro
-    const totalVal  = ventas.reduce((s, v) => s + (v.precio_venta||0) * (v.cantidad||1), 0);
+    const totalVal  = ventas.reduce((s, v) => s + (v.precio_venta_final||v.precio_venta||0) * (v.cantidad||1), 0);
     const totalCost = ventas.reduce((s, v) => s + (v.costo_unitario||0) * (v.cantidad||1), 0);
     const margen    = totalVal - totalCost;
     const margenPct = totalVal > 0 ? Math.round(margen / totalVal * 1000) / 10 : 0;
@@ -3049,7 +3049,7 @@ async def panel_stock():
     tbody.innerHTML = ventas.map(v => {
       const costo_unit = v.costo_unitario || 0;
       const qty        = v.cantidad || 1;
-      const precio     = v.precio_venta || 0;
+      const precio     = v.precio_venta_final || v.precio_venta || 0;
       const margen_v   = v.margen !== undefined ? v.margen : (precio - costo_unit) * qty;
       const margenColor = margen_v >= 0 ? 'var(--green)' : 'var(--red)';
       const metLabel   = METODO_LABEL[v.metodo_pago] || (v.metodo_pago || '—');
