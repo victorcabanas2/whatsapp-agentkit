@@ -527,6 +527,22 @@ async def eliminar_movimiento(mov_id: str):
     return {"status": "ok"}
 
 
+@router.put("/api/movimientos/{mov_id}")
+async def editar_movimiento(mov_id: str, body: dict):
+    data = load_movimientos()
+    mov = next((m for m in data["movimientos"] if m.get("id") == mov_id), None)
+    if not mov:
+        raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+    campos = ["tipo","producto","cantidad","ubicacion","precio_venta","notas","fecha",
+              "recibido_por","cliente_nombre","cliente_telefono","metodo_pago",
+              "precio_venta_final","absorcion_banco"]
+    for c in campos:
+        if c in body:
+            mov[c] = body[c]
+    save_movimientos(data)
+    return {"status": "ok", "movimiento": mov}
+
+
 @router.put("/api/stock/productos/{prod_id}/costo")
 async def actualizar_costo_producto(prod_id: str, body: dict):
     data = load_stock()
@@ -1717,6 +1733,83 @@ async def panel_stock():
       </button>
     </div>
 
+    <!-- Modal editar movimiento -->
+    <div id="modal-edit-mov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;overflow-y:auto;padding:20px 0">
+      <div style="background:var(--white);border-radius:var(--radius-lg);padding:24px;max-width:600px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+        <h3 style="font-family:Montserrat,sans-serif;font-size:1rem;font-weight:700;margin:0 0 16px">Editar movimiento</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:12px">
+          <div style="flex:1;min-width:140px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Tipo</label>
+            <select id="em-tipo" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%">
+              <option value="venta">Venta</option>
+              <option value="reposicion">Reposicion</option>
+              <option value="retiro">Retiro</option>
+              <option value="ajuste">Ajuste</option>
+            </select>
+          </div>
+          <div style="flex:2;min-width:180px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Producto</label>
+            <input type="text" id="em-producto" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+          <div style="flex:1;min-width:80px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Cantidad</label>
+            <input type="number" id="em-cantidad" min="1" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+          <div style="flex:1;min-width:140px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Ubicacion</label>
+            <input type="text" id="em-ubicacion" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+          <div style="flex:1;min-width:140px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Precio venta</label>
+            <input type="number" id="em-precio" min="0" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+          <div style="flex:1;min-width:130px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Fecha</label>
+            <input type="date" id="em-fecha" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+          <div style="flex:0 0 100%">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Notas</label>
+            <input type="text" id="em-notas" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+          <div style="flex:1;min-width:140px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Recibido por</label>
+            <input type="text" id="em-recibido" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+          <div style="flex:1;min-width:140px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Cliente</label>
+            <input type="text" id="em-cliente-nombre" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+          <div style="flex:1;min-width:130px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Telefono</label>
+            <input type="text" id="em-cliente-telefono" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+          <div style="flex:1;min-width:140px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Metodo de pago</label>
+            <select id="em-metodo-pago" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%">
+              <option value="">— Ninguno —</option>
+              <option value="efectivo">Efectivo</option>
+              <option value="transferencia">Transferencia</option>
+              <option value="ueno">UENO</option>
+              <option value="tarjeta">Tarjeta</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:140px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Precio final (opcional)</label>
+            <input type="number" id="em-precio-final" min="0" placeholder="Override" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+          <div style="flex:1;min-width:130px">
+            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">% Absorcion banco</label>
+            <input type="number" id="em-absorcion-banco" min="0" max="100" step="0.1" placeholder="Ej: 5.5" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn-sm primary" onclick="guardarEditarMov()">Guardar cambios</button>
+          <button class="btn-sm secondary" onclick="cerrarEditarMov()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal importar costos -->
     <div id="modal-costos" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center">
       <div style="background:var(--white);border-radius:var(--radius-lg);padding:24px;max-width:520px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.2)">
@@ -2237,6 +2330,7 @@ async def panel_stock():
       tbody.innerHTML = '<tr><td colspan="9" class="state-msg">Sin movimientos registrados aun.</td></tr>';
       return;
     }
+    movs.forEach(m => { _movMap[m.id] = m; });
     tbody.innerHTML = movs.map(m => {
       const fCorta = m.fecha ? new Date(m.fecha).toLocaleDateString('es-PY',{day:'2-digit',month:'2-digit',year:'2-digit'}) + ' ' + new Date(m.fecha).toLocaleTimeString('es-PY',{hour:'2-digit',minute:'2-digit'}) : '—';
       return `
@@ -2249,7 +2343,12 @@ async def panel_stock():
         <td style="padding:10px 14px;font-size:.82rem;color:var(--text-muted)">${escapeHtml(m.recibido_por||'—')}</td>
         <td style="padding:10px 14px;text-align:right;font-size:.82rem;font-family:Montserrat,sans-serif">${m.precio_venta ? formatGs(m.precio_venta) : '—'}</td>
         <td style="padding:10px 14px;font-size:.82rem;color:var(--text-muted)">${escapeHtml(m.notas||'')}</td>
-        <td style="padding:10px 14px;text-align:center">
+        <td style="padding:10px 14px;text-align:center;white-space:nowrap">
+          <button class="btn-icon" onclick="abrirEditarMov('${m.id}')" title="Editar" style="color:var(--purple)">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+            </svg>
+          </button>
           <button class="btn-icon danger" onclick="eliminarMovimiento('${m.id}')" title="Eliminar">
             <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -2328,6 +2427,72 @@ async def panel_stock():
     }
   }
 
+  /* ─── Editar movimiento ─── */
+  let _editMovId = null;
+
+  function abrirEditarMov(id) {
+    const m = _movMap[id];
+    if (!m) return;
+    _editMovId = id;
+    document.getElementById('em-tipo').value = m.tipo || 'venta';
+    document.getElementById('em-producto').value = m.producto || '';
+    document.getElementById('em-cantidad').value = Math.abs(m.cantidad) || 1;
+    document.getElementById('em-ubicacion').value = m.ubicacion || '';
+    document.getElementById('em-precio').value = m.precio_venta || '';
+    document.getElementById('em-fecha').value = (m.fecha || '').slice(0,10);
+    document.getElementById('em-notas').value = m.notas || '';
+    document.getElementById('em-recibido').value = m.recibido_por || '';
+    document.getElementById('em-cliente-nombre').value = m.cliente_nombre || '';
+    document.getElementById('em-cliente-telefono').value = m.cliente_telefono || '';
+    document.getElementById('em-metodo-pago').value = m.metodo_pago || '';
+    document.getElementById('em-precio-final').value = m.precio_venta_final || '';
+    document.getElementById('em-absorcion-banco').value = m.absorcion_banco || '';
+    document.getElementById('modal-edit-mov').style.display = 'flex';
+  }
+
+  function cerrarEditarMov() {
+    document.getElementById('modal-edit-mov').style.display = 'none';
+    _editMovId = null;
+  }
+
+  async function guardarEditarMov() {
+    if (!_editMovId) return;
+    const cantidad = parseInt(document.getElementById('em-cantidad').value, 10);
+    const body = {
+      tipo: document.getElementById('em-tipo').value,
+      producto: document.getElementById('em-producto').value.trim(),
+      cantidad: isNaN(cantidad) ? 1 : cantidad,
+      ubicacion: document.getElementById('em-ubicacion').value.trim(),
+      precio_venta: parseFloat(document.getElementById('em-precio').value) || 0,
+      fecha: document.getElementById('em-fecha').value ? document.getElementById('em-fecha').value + 'T00:00:00' : '',
+      notas: document.getElementById('em-notas').value.trim(),
+      recibido_por: document.getElementById('em-recibido').value.trim(),
+      cliente_nombre: document.getElementById('em-cliente-nombre').value.trim(),
+      cliente_telefono: document.getElementById('em-cliente-telefono').value.trim(),
+      metodo_pago: document.getElementById('em-metodo-pago').value,
+      precio_venta_final: parseFloat(document.getElementById('em-precio-final').value) || 0,
+      absorcion_banco: parseFloat(document.getElementById('em-absorcion-banco').value) || 0,
+    };
+    try {
+      const res = await fetch('/api/movimientos/' + _editMovId, {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      cerrarEditarMov();
+      const movRes = await fetch('/api/movimientos');
+      if (movRes.ok) {
+        movimientosData = await movRes.json();
+        filtrarMovimientos();
+      }
+      await cargarStock();
+      mostrarToast('Movimiento actualizado', 'ok');
+    } catch(err) {
+      mostrarToast('Error al guardar cambios', 'err');
+    }
+  }
+
   /* ─── Eliminar movimiento ─── */
   async function eliminarMovimiento(movId) {
     if (!confirm('Eliminar este movimiento?')) return;
@@ -2403,6 +2568,9 @@ async def panel_stock():
       });
     }
   }
+
+  /* ─── Mov map (id → objeto, para edición) ─── */
+  let _movMap = {};
 
   /* ─── Consignacion state ─── */
   let consigData = null;
