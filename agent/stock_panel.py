@@ -2202,7 +2202,8 @@ async def panel_stock():
             </svg>
           </button>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
   }
 
   /* ─── Filtrar movimientos (JS, sin recarga) ─── */
