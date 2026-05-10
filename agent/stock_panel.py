@@ -1628,16 +1628,16 @@ async def panel_stock():
           </select>
         </div>
         <!-- Avanzado: precio final y absorción banco -->
-        <div style="grid-column:1/-1;margin-top:2px">
+        <div style="flex:0 0 100%;margin-top:2px">
           <details>
-            <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted);user-select:none;padding:4px 0">Opciones avanzadas (UENO Black / banco)</summary>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Precio venta final (override)</label>
+            <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted);user-select:none;padding:4px 0">Opciones adicionales (precio final / absorción banco)</summary>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+              <div style="flex:1;min-width:160px">
+                <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Precio de venta final (opcional)</label>
                 <input type="number" id="mf-precio-final" placeholder="Ej: 1500000" min="0" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
               </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">% Absorción banco (override)</label>
+              <div style="flex:1;min-width:160px">
+                <label style="font-size:.78rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">% Absorción banco (opcional)</label>
                 <input type="number" id="mf-absorcion-banco" placeholder="Ej: 5.5" min="0" max="100" step="0.1" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
               </div>
             </div>
