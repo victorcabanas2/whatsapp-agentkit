@@ -1734,82 +1734,6 @@ async def panel_stock():
     </div>
 
     <!-- Modal editar movimiento -->
-    <div id="modal-edit-mov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;overflow-y:auto;padding:20px 0">
-      <div style="background:var(--white);border-radius:var(--radius-lg);padding:24px;max-width:600px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
-        <h3 style="font-family:Montserrat,sans-serif;font-size:1rem;font-weight:700;margin:0 0 16px">Editar movimiento</h3>
-        <div style="display:flex;flex-wrap:wrap;gap:12px">
-          <div style="flex:1;min-width:140px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Tipo</label>
-            <select id="em-tipo" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%">
-              <option value="venta">Venta</option>
-              <option value="reposicion">Reposicion</option>
-              <option value="retiro">Retiro</option>
-              <option value="ajuste">Ajuste</option>
-            </select>
-          </div>
-          <div style="flex:2;min-width:180px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Producto</label>
-            <input type="text" id="em-producto" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
-          </div>
-          <div style="flex:1;min-width:80px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Cantidad</label>
-            <input type="number" id="em-cantidad" min="1" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
-          </div>
-          <div style="flex:1;min-width:140px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Ubicacion</label>
-            <input type="text" id="em-ubicacion" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
-          </div>
-          <div style="flex:1;min-width:140px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Precio venta</label>
-            <input type="number" id="em-precio" min="0" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
-          </div>
-          <div style="flex:1;min-width:130px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Fecha</label>
-            <input type="date" id="em-fecha" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
-          </div>
-          <div style="flex:0 0 100%">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Notas</label>
-            <input type="text" id="em-notas" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
-          </div>
-          <div style="flex:1;min-width:140px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Recibido por</label>
-            <input type="text" id="em-recibido" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
-          </div>
-          <div style="flex:1;min-width:140px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Cliente</label>
-            <input type="text" id="em-cliente-nombre" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
-          </div>
-          <div style="flex:1;min-width:130px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Telefono</label>
-            <input type="text" id="em-cliente-telefono" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
-          </div>
-          <div style="flex:1;min-width:140px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Metodo de pago</label>
-            <select id="em-metodo-pago" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%">
-              <option value="">— Ninguno —</option>
-              <option value="efectivo">Efectivo</option>
-              <option value="transferencia">Transferencia</option>
-              <option value="ueno">UENO</option>
-              <option value="tarjeta">Tarjeta</option>
-              <option value="otro">Otro</option>
-            </select>
-          </div>
-          <div style="flex:1;min-width:140px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Precio final (opcional)</label>
-            <input type="number" id="em-precio-final" min="0" placeholder="Override" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
-          </div>
-          <div style="flex:1;min-width:130px">
-            <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">% Absorcion banco</label>
-            <input type="number" id="em-absorcion-banco" min="0" max="100" step="0.1" placeholder="Ej: 5.5" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:16px">
-          <button class="btn-sm primary" onclick="guardarEditarMov()">Guardar cambios</button>
-          <button class="btn-sm secondary" onclick="cerrarEditarMov()">Cancelar</button>
-        </div>
-      </div>
-    </div>
-
     <!-- Modal importar costos -->
     <div id="modal-costos" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center">
       <div style="background:var(--white);border-radius:var(--radius-lg);padding:24px;max-width:520px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.2)">
@@ -3215,5 +3139,82 @@ async def panel_stock():
   cargarConsig();
   refreshTimer = setInterval(() => cargarStock(false), 60000);
 </script>
+
+<!-- Modal editar movimiento — fuera de todas las secciones para que position:fixed funcione -->
+<div id="modal-edit-mov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;overflow-y:auto;padding:20px 0">
+  <div style="background:var(--white);border-radius:var(--radius-lg);padding:24px;max-width:600px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <h3 style="font-family:Montserrat,sans-serif;font-size:1rem;font-weight:700;margin:0 0 16px">Editar movimiento</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:12px">
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Tipo</label>
+        <select id="em-tipo" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%">
+          <option value="venta">Venta</option>
+          <option value="reposicion">Reposicion</option>
+          <option value="retiro">Retiro</option>
+          <option value="ajuste">Ajuste</option>
+        </select>
+      </div>
+      <div style="flex:2;min-width:180px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Producto</label>
+        <input type="text" id="em-producto" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+      </div>
+      <div style="flex:1;min-width:80px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Cantidad</label>
+        <input type="number" id="em-cantidad" min="1" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+      </div>
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Ubicacion</label>
+        <input type="text" id="em-ubicacion" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+      </div>
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Precio venta</label>
+        <input type="number" id="em-precio" min="0" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+      </div>
+      <div style="flex:1;min-width:130px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Fecha</label>
+        <input type="date" id="em-fecha" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+      </div>
+      <div style="flex:0 0 100%">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Notas</label>
+        <input type="text" id="em-notas" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+      </div>
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Recibido por</label>
+        <input type="text" id="em-recibido" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+      </div>
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Cliente</label>
+        <input type="text" id="em-cliente-nombre" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+      </div>
+      <div style="flex:1;min-width:130px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Telefono</label>
+        <input type="text" id="em-cliente-telefono" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+      </div>
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Metodo de pago</label>
+        <select id="em-metodo-pago" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%">
+          <option value="">— Ninguno —</option>
+          <option value="efectivo">Efectivo</option>
+          <option value="transferencia">Transferencia</option>
+          <option value="ueno">UENO</option>
+          <option value="tarjeta">Tarjeta</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Precio final (opcional)</label>
+        <input type="number" id="em-precio-final" min="0" placeholder="Override" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+      </div>
+      <div style="flex:1;min-width:130px">
+        <label style="font-size:.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">% Absorcion banco</label>
+        <input type="number" id="em-absorcion-banco" min="0" max="100" step="0.1" placeholder="Ej: 5.5" style="font-family:Raleway,sans-serif;font-size:.88rem;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--white);color:var(--text);width:100%;box-sizing:border-box">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn-sm primary" onclick="guardarEditarMov()">Guardar cambios</button>
+      <button class="btn-sm secondary" onclick="cerrarEditarMov()">Cancelar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>"""
