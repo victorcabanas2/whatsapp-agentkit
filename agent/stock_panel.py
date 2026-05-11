@@ -912,6 +912,22 @@ async def panel_stock():
     }
     .category-section.open .chevron { transform: rotate(180deg); }
 
+    /* ── Subcategoria WHOOP ── */
+    .subcat-row td {
+      background: var(--purple-bg);
+      padding: 6px 14px;
+      border-top: 1px solid var(--border);
+    }
+    .subcat-row:first-child td { border-top: none; }
+    .subcat-header-cell {
+      font-family: 'Montserrat', sans-serif;
+      font-size: .7rem;
+      font-weight: 700;
+      color: var(--purple);
+      text-transform: uppercase;
+      letter-spacing: .1em;
+    }
+
     /* ── Table ── */
     .table-wrap {
       border: 1px solid var(--border);
@@ -1856,16 +1872,52 @@ async def panel_stock():
   let refreshTimer = null;
 
   /* ─── Categorization ─── */
-  const CATEGORIAS_ORDER = ['WHOOP', 'Theragun', 'TheraFace', 'JetBoots', 'Otros'];
+  const CATEGORIAS_ORDER = ['WHOOP', 'Rendimiento', 'Wellness', 'Sueño & Relajación', 'Belleza'];
 
   function getCategoria(nombre) {
-    if (!nombre) return 'Otros';
+    if (!nombre) return 'Wellness';
     const n = nombre.trim();
-    if (n.startsWith('WHOOP'))     return 'WHOOP';
-    if (n.startsWith('Theragun'))  return 'Theragun';
-    if (n.startsWith('TheraFace')) return 'TheraFace';
-    if (n.startsWith('JetBoots')) return 'JetBoots';
-    return 'Otros';
+    if (n.startsWith('WHOOP'))                        return 'WHOOP';
+    if (n.startsWith('Theragun'))                     return 'Rendimiento';
+    if (n.startsWith('JetBoots'))                     return 'Rendimiento';
+    if (n === 'WaveSolo')                             return 'Rendimiento';
+    if (n.includes('Recovery Pulse') || n === 'Calf Sleeve') return 'Rendimiento';
+    if (n.includes('ThermBack'))                      return 'Wellness';
+    if (n.includes('Therm Cube') || n === 'Recovery Therm Cube') return 'Wellness';
+    if (n.includes('TheraCup'))                       return 'Wellness';
+    if (n.includes('SmartGoggles'))                   return 'Sueño & Relajación';
+    if (n === 'SleepMask' || n.includes('Sleep'))     return 'Sueño & Relajación';
+    if (n.startsWith('TheraFace'))                    return 'Belleza';
+    if (n.startsWith('FOREO'))                        return 'Belleza';
+    return 'Wellness';
+  }
+
+  /* ─── WHOOP sub-categorization ─── */
+  const WHOOP_SUBCAT_ORDER = ['Planes', 'Bandas', 'Accesorios'];
+
+  function getWhoopSubcat(nombre) {
+    if (!nombre) return 'Accesorios';
+    const n = nombre.trim();
+    if (n === 'WHOOP LIFE MG' || n === 'WHOOP PEAK 5.0' || n === 'WHOOP ONE 5.0') return 'Planes';
+    if (n.includes('Bandas')) return 'Bandas';
+    return 'Accesorios';
+  }
+
+  function renderWhoopSubcats(prods) {
+    const subcats = {};
+    WHOOP_SUBCAT_ORDER.forEach(s => { subcats[s] = []; });
+    prods.forEach(p => {
+      const sc = getWhoopSubcat(p.nombre);
+      subcats[sc].push(p);
+    });
+    let rows = '';
+    WHOOP_SUBCAT_ORDER.forEach(sc => {
+      const items = subcats[sc];
+      if (!items || items.length === 0) return;
+      rows += `<tr class="subcat-row"><td colspan="4" class="subcat-header-cell">${sc}</td></tr>`;
+      rows += items.map(p => renderFila(p)).join('');
+    });
+    return rows;
   }
 
   /* ─── Badge helpers ─── */
@@ -2004,7 +2056,7 @@ async def panel_stock():
                 </tr>
               </thead>
               <tbody>
-                ${prods.map(p => renderFila(p)).join('')}
+                ${cat === 'WHOOP' ? renderWhoopSubcats(prods) : prods.map(p => renderFila(p)).join('')}
               </tbody>
             </table>
           </div>
